@@ -132,7 +132,7 @@ class TelegramBotController extends Controller
 
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => "✅ Задача добавлена!",
+            'text' => "Задача добавлена!",
             'reply_markup' => $this->getMainKeyboard()
         ]);
 
