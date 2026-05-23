@@ -7,7 +7,6 @@ use Telegram\Bot\Api;
 use App\Models\UserTask;
 use App\Models\TelegramUser;
 use Illuminate\Support\Facades\Http;
-use OpenAI\Laravel\Facades\OpenAI;
 
 class TelegramBotController extends Controller
 {
@@ -453,42 +452,41 @@ class TelegramBotController extends Controller
         if ($query === '/exit') {
             $user->state = null;
             $user->save();
-            
             $telegram->sendMessage([
                 'chat_id' => $chatId,
                 'text' => "🤖 ИИ-режим выключен!",
                 'reply_markup' => $this->getMainKeyboard()
             ]);
-            
             return response()->json(['status' => 'ok']);
         }
-        
+
+        $apiKey = env('HF_API_KEY');
+
         try {
-            $response = OpenAI::chat()->create([
-                'model' => 'gpt-3.5-turbo',
-                'messages' => [
-                    ['role' => 'system', 'content' => 'Ты - полезный ассистент. Отвечай кратко и по делу.'],
-                    ['role' => 'user', 'content' => $query]
-                ],
-                'max_tokens' => 500,
+            $response = Http::timeout(30)->withHeaders([
+                'Authorization' => "Bearer {$apiKey}"
+            ])->post('https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium', [
+                'inputs' => $query
             ]);
-            
-            // Правильный доступ к ответу
-            $answer = $response['choices'][0]['message']['content'] ?? 'Не удалось получить ответ';
-            
+
+            if ($response->successful()) {
+                $answer = $response->json()[0]['generated_text'] ?? 'Не удалось получить ответ';
+            } else {
+                $answer = "Ошибка API: " . $response->status();
+            }
+
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => $answer,
-                'parse_mode' => 'Markdown'
+                'text' => $answer
             ]);
-            
+
         } catch (\Exception $e) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "❗ Ошибка: " . $e->getMessage()
+                'text' => "Ошибка подключения к ИИ, попробуйте позже."
             ]);
         }
-        
+
         return response()->json(['status' => 'ok']);
     }
 
