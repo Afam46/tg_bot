@@ -467,24 +467,25 @@ class TelegramBotController extends Controller
             $response = OpenAI::chat()->create([
                 'model' => 'gpt-3.5-turbo',
                 'messages' => [
-                    ['role' => 'system', 'content' => 'Ты — полезный ассистент. Отвечай кратко и по делу.'],
+                    ['role' => 'system', 'content' => 'Ты - полезный ассистент. Отвечай кратко и по делу.'],
                     ['role' => 'user', 'content' => $query]
                 ],
                 'max_tokens' => 500,
             ]);
             
-            $answer = $response->choices[0]->message->content;
+            // Правильный доступ к ответу
+            $answer = $response['choices'][0]['message']['content'] ?? 'Не удалось получить ответ';
             
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "{$answer}",
+                'text' => $answer,
                 'parse_mode' => 'Markdown'
             ]);
             
         } catch (\Exception $e) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "❗ Сервер временно недоступен, попробуйте позже"
+                'text' => "❗ Ошибка: " . $e->getMessage()
             ]);
         }
         
