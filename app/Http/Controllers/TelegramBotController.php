@@ -460,17 +460,13 @@ class TelegramBotController extends Controller
             return response()->json(['status' => 'ok']);
         }
 
-        $apiKey = env('HF_API_KEY');
-
         try {
-            $response = Http::timeout(30)->withHeaders([
-                'Authorization' => "Bearer {$apiKey}"
-            ])->post('https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium', [
-                'inputs' => $query
+            $response = Http::timeout(30)->post('https://koala.sh/api/chat', [
+                'message' => $query
             ]);
 
             if ($response->successful()) {
-                $answer = $response->json()[0]['generated_text'] ?? 'Не удалось получить ответ';
+                $answer = $response->json()['reply'] ?? 'Не удалось получить ответ';
             } else {
                 $answer = "Ошибка API: " . $response->status();
             }
@@ -483,7 +479,7 @@ class TelegramBotController extends Controller
         } catch (\Exception $e) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "Ошибка подключения к ИИ, попробуйте позже."
+                'text' => "Ошибка подключения: " . $e->getMessage()
             ]);
         }
 
