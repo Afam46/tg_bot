@@ -14,8 +14,8 @@ class TelegramBotController extends Controller
     {
         return json_encode([
             'keyboard' => [
-                ['Мой профиль', 'Создать задачу'],
-                ['Мои задачи', 'Погода']
+                ['👤 Мой профиль 👤', '➕ Создать задачу ➕'],
+                ['📋 Мои задачи 📋', '🌤️ Погода 🌤️']
             ],
             'resize_keyboard' => true,
             'one_time_keyboard' => false
@@ -96,8 +96,8 @@ class TelegramBotController extends Controller
         );
 
         $text = $user->wasRecentlyCreated 
-            ? "Авторизация прошла успешно!" 
-            : "Вы авторизованы!";
+            ? "✅ Авторизация прошла успешно ✅" 
+            : "❗ Вы авторизованы! ❗";
 
         $telegram->sendMessage([
             'chat_id' => $chatId,
@@ -132,7 +132,7 @@ class TelegramBotController extends Controller
 
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => "Задача добавлена!",
+            'text' => "✅ Задача добавлена!\n📋 Текст: {$text}",
             'reply_markup' => $this->getMainKeyboard()
         ]);
 
@@ -140,12 +140,18 @@ class TelegramBotController extends Controller
     }
 
     private function handleProfile($telegram, $chatId, $user)
-    {
+    {   
+        $allTasksCount = $user->tasks()->count();
         $completedTasksCount = $user->tasks()->where('status', true)->count();
+        $unCompletedTasksCount = $allTasksCount - $completedTasksCount;
         
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => "{$user->first_name}\nРешенных задач: {$completedTasksCount}"
+            'text' => "👤 {$user->username} 👤\n"
+                    . "📛 Имя: {$user->first_name}\n"
+                    . "📋 Всего задач: {$allTasksCount}\n"
+                    . "✅ Решенных задач: {$completedTasksCount}\n"
+                    . "❌ Осталось задач: {$unCompletedTasksCount}"
         ]);
 
         return response()->json(['status' => 'ok']);
@@ -158,7 +164,7 @@ class TelegramBotController extends Controller
 
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => 'Опиши задачу:',
+            'text' => '✏️ Опиши задачу:',
             'reply_markup' => json_encode(['remove_keyboard' => true])
         ]);
 
@@ -180,7 +186,7 @@ class TelegramBotController extends Controller
             foreach ($tasks as $index => $task) {
                 $response .= ($index + 1) . ". {$task->task_text}\n";
             }
-            $response .= "\nЧтобы отметить выполненную: /done [номер]";
+            $response .= "\n➡️ /done [номер] — ✅ выполнить";
         }
 
         $telegram->sendMessage([
@@ -202,7 +208,7 @@ class TelegramBotController extends Controller
         if (!isset($tasks[$index])) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "Задача с номером {$taskNumber} не найдена"
+                'text' => "❌ Задача с номером {$taskNumber} не найдена ❌"
             ]);
             return response()->json(['status' => 'ok']);
         }
@@ -213,7 +219,7 @@ class TelegramBotController extends Controller
 
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => "Задача '{$task->task_text}' выполнена"
+            'text' => "✅ Задача '{$task->task_text}' выполнена ✅"
         ]);
 
         return response()->json(['status' => 'ok']);
@@ -226,7 +232,7 @@ class TelegramBotController extends Controller
         
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => 'Введите название города:',
+            'text' => '🔍 Введите название города 🔍',
             'reply_markup' => json_encode(['remove_keyboard' => true])
         ]);
         
@@ -240,7 +246,7 @@ class TelegramBotController extends Controller
         if (empty($apiKey)) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "API погоды не настроен",
+                'text' => "❗ API погоды не настроен ❗",
                 'reply_markup' => $this->getMainKeyboard()
             ]);
             $user->state = null;
@@ -300,7 +306,7 @@ class TelegramBotController extends Controller
             
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "*Ошибка погоды:* {$errorMessage}\n\nПроверьте название города и попробуйте снова",
+                'text' => "❗ {$errorMessage} ❗\n\nПроверьте название города и попробуйте снова",
                 'parse_mode' => 'Markdown',
                 'reply_markup' => $this->getMainKeyboard()
             ]);
@@ -316,7 +322,7 @@ class TelegramBotController extends Controller
     {
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => 'Используй кнопки!',
+            'text' => '❗ Используй кнопки ❗',
             'reply_markup' => $this->getMainKeyboard()
         ]);
 
