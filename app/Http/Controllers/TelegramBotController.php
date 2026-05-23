@@ -7,6 +7,7 @@ use Telegram\Bot\Api;
 use App\Models\UserTask;
 use App\Models\TelegramUser;
 use Illuminate\Support\Facades\Http;
+use OpenAI\Laravel\Facades\OpenAI;
 
 class TelegramBotController extends Controller
 {
@@ -15,7 +16,8 @@ class TelegramBotController extends Controller
         return json_encode([
             'keyboard' => [
                 ['👤 Мой профиль', '➕ Создать задачу'],
-                ['📋 Мои задачи', '🌤️ Погода']
+                ['📋 Мои задачи', '🌤️ Погода'],
+                ['🤖 ИИ-режим']
             ],
             'resize_keyboard' => true,
             'one_time_keyboard' => false
@@ -89,11 +91,16 @@ class TelegramBotController extends Controller
             return $this->handleGetWeather($telegram, $chatId, $user, $text);
         }
 
+        if ($user->state === 'waiting_ai') {
+            return $this->handleAiQuery($telegram, $chatId, $user, $text);
+        }
+
         $handlers = [
             '👤 Мой профиль' => 'handleProfile',
             '➕ Создать задачу' => 'handleCreateTask',
             '📋 Мои задачи' => 'handleMyTasks',
             '🌤️ Погода' => 'handleWeather',
+            '🤖 ИИ-режим' => 'handleAiMode',
         ];
 
         if (isset($handlers[$text])) {
@@ -424,6 +431,64 @@ class TelegramBotController extends Controller
             'parse_mode' => 'Markdown',
             'reply_markup' => $keyboard
         ]);
+    }
+
+    private function handleAiMode($telegram, $chatId, $user)
+    {
+        $user->state = 'waiting_ai';
+        $user->save();
+        
+        $telegram->sendMessage([
+            'chat_id' => $chatId,
+            'text' => "🤖 ИИ-режим активирован!\n\nЗадайте любой вопрос, и я постараюсь ответить.\n\nЧтобы выключить режим, отправьте команду /exit",
+            'parse_mode' => 'Markdown',
+            'reply_markup' => json_encode(['remove_keyboard' => true])
+        ]);
+        
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function handleAiQuery($telegram, $chatId, $user, $query)
+    {
+        if ($query === '/exit') {
+            $user->state = null;
+            $user->save();
+            
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "🤖 ИИ-режим выключен!",
+                'reply_markup' => $this->getMainKeyboard()
+            ]);
+            
+            return response()->json(['status' => 'ok']);
+        }
+        
+        try {
+            $response = OpenAI::chat()->create([
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Ты — полезный ассистент. Отвечай кратко и по делу.'],
+                    ['role' => 'user', 'content' => $query]
+                ],
+                'max_tokens' => 500,
+            ]);
+            
+            $answer = $response->choices[0]->message->content;
+            
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "{$answer}",
+                'parse_mode' => 'Markdown'
+            ]);
+            
+        } catch (\Exception $e) {
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "❗ Сервер временно недоступен, попробуйте позже"
+            ]);
+        }
+        
+        return response()->json(['status' => 'ok']);
     }
 
     private function handleUnknown($telegram, $chatId)
