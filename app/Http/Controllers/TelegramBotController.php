@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Telegram\Bot\Api;
 use App\Models\UserTask;
 use App\Models\TelegramUser;
+use Illuminate\Support\Facades\Http;
 
 class TelegramBotController extends Controller
 {
@@ -14,7 +15,7 @@ class TelegramBotController extends Controller
         return json_encode([
             'keyboard' => [
                 ['Мой профиль', 'Создать задачу'],
-                ['Мои задачи']
+                ['Мои задачи', 'Погода']
             ],
             'resize_keyboard' => true,
             'one_time_keyboard' => false
@@ -56,10 +57,15 @@ class TelegramBotController extends Controller
             return $this->handleWaitingTask($telegram, $chatId, $user, $text);
         }
 
+        if ($user->state === 'waiting_city') {
+            return $this->handleGetWeather($telegram, $chatId, $user, $text);
+        }
+
         $handlers = [
             'Мой профиль' => 'handleProfile',
             'Создать задачу' => 'handleCreateTask',
             'Мои задачи' => 'handleMyTasks',
+            'Погода' => 'handleWeather',
         ];
 
         if (isset($handlers[$text])) {
@@ -90,8 +96,8 @@ class TelegramBotController extends Controller
         );
 
         $text = $user->wasRecentlyCreated 
-            ? "Чел, теперь ты сохранен в моей БД" 
-            : "Ты и так зареган";
+            ? "Авторизация прошла успешно!" 
+            : "Вы авторизованы!";
 
         $telegram->sendMessage([
             'chat_id' => $chatId,
@@ -106,7 +112,7 @@ class TelegramBotController extends Controller
     {
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => 'Привет! Напиши /start, чтобы зарегистрироваться.',
+            'text' => 'Привет! Напиши /start, чтобы авторизоваться',
             'reply_markup' => $this->getStartKeyboard()
         ]);
 
@@ -135,9 +141,14 @@ class TelegramBotController extends Controller
 
     private function handleProfile($telegram, $chatId, $user)
     {
+        $completedTasksCount = $user->tasks()->where('status', true)->count();
+        
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => "Username: {$user->username}\nFirstName: {$user->first_name}\nLastName: {$user->last_name}\nЗадач: " . $user->tasks()->count()
+            'text' => "Username: {$user->username}\n
+            FirstName: {$user->first_name}\n
+            LastName: {$user->last_name}\n
+            Решенных задач: {$completedTasksCount}"
         ]);
 
         return response()->json(['status' => 'ok']);
@@ -194,7 +205,7 @@ class TelegramBotController extends Controller
         if (!isset($tasks[$index])) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "❌ Задача с номером {$taskNumber} не найдена."
+                'text' => "Задача с номером {$taskNumber} не найдена"
             ]);
             return response()->json(['status' => 'ok']);
         }
@@ -205,9 +216,57 @@ class TelegramBotController extends Controller
 
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => "✅ Задача «{$task->task_text}» выполнена!"
+            'text' => "Задача '{$task->task_text}' выполнена"
         ]);
 
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function handleWeather($telegram, $chatId, $user)
+    {
+        $user->state = 'waiting_city';
+        $user->save();
+        
+        $telegram->sendMessage([
+            'chat_id' => $chatId,
+            'text' => 'Введите название города:',
+            'reply_markup' => json_encode(['remove_keyboard' => true])
+        ]);
+        
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function handleGetWeather($telegram, $chatId, $user, $city)
+    {
+        $apiKey = config('app.weather_api_key');
+        $url = "https://api.openweathermap.org/data/2.5/weather?q={$city}&appid={$apiKey}&units=metric&lang=ru";
+        
+        $response = file_get_contents($url);
+        $data = json_decode($response, true);
+        
+        if (!isset($data['main'])) {
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "Город '{$city}' не найден. Попробуйте ещё раз."
+            ]);
+        } else {
+            $temp = $data['main']['temp'];
+            $feelsLike = $data['main']['feels_like'];
+            $description = $data['weather'][0]['description'];
+            
+            $text = "🌍 Погода в городе {$city}:\n🌡️ Температура: {$temp}°C\n
+                    🤔 Ощущается как: {$feelsLike}°C\n📖 Описание: {$description}";
+            
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => $text,
+                'reply_markup' => $this->getMainKeyboard()
+            ]);
+        }
+        
+        $user->state = null;
+        $user->save();
+        
         return response()->json(['status' => 'ok']);
     }
 
