@@ -450,37 +450,85 @@ class TelegramBotController extends Controller
     private function handleAiQuery($telegram, $chatId, $user, $query)
     {
         if ($query === '/exit') {
+
             $user->state = null;
             $user->save();
+
             $telegram->sendMessage([
                 'chat_id' => $chatId,
                 'text' => "🤖 ИИ-режим выключен!",
                 'reply_markup' => $this->getMainKeyboard()
             ]);
+
             return response()->json(['status' => 'ok']);
         }
 
         try {
-            $response = Http::timeout(30)->get('https://api.popcat.xyz/chat', [
-                'msg' => $query
+
+            // typing...
+            $telegram->sendChatAction([
+                'chat_id' => $chatId,
+                'action' => 'typing'
             ]);
 
-            if ($response->successful()) {
-                $data = $response->json();
-                $answer = $data['response'] ?? 'Не удалось получить ответ.';
-            } else {
-                $answer = "Ошибка API: " . $response->status();
+            $response = Http::withHeaders([
+                'Authorization' => 'Bearer ' . env('DEEPSEEK_API_KEY'),
+                'Content-Type' => 'application/json',
+            ])->timeout(60)->post(
+                'https://api.deepseek.com/chat/completions',
+                [
+                    'model' => 'deepseek-chat',
+
+                    'messages' => [
+                        [
+                            'role' => 'system',
+                            'content' => 'Ты полезный Telegram ассистент.'
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => $query
+                        ]
+                    ],
+
+                    'temperature' => 0.7,
+                    'max_tokens' => 1000,
+                ]
+            );
+
+            if (!$response->successful()) {
+
+                $telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => '❌ Ошибка AI API: ' . $response->body(),
+                    'reply_markup' => $this->getMainKeyboard()
+                ]);
+
+                return response()->json(['status' => 'ok']);
             }
+
+            $data = $response->json();
+
+            $answer = $data['choices'][0]['message']['content']
+                ?? 'Не удалось получить ответ';
+
+            // Telegram limit
+            $answer = mb_substr($answer, 0, 4000);
 
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => $answer
+                'text' => $answer,
+                'reply_markup' => json_encode([
+                    'keyboard' => [['/exit']],
+                    'resize_keyboard' => true
+                ])
             ]);
 
         } catch (\Exception $e) {
+
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "Ошибка подключения к ИИ. Попробуйте позже."
+                'text' => '❌ Ошибка подключения: ' . $e->getMessage(),
+                'reply_markup' => $this->getMainKeyboard()
             ]);
         }
 
