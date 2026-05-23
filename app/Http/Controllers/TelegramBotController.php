@@ -456,7 +456,7 @@ class TelegramBotController extends Controller
 
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "🤖 ИИ-режим выключен!",
+                'text' => '🤖 ИИ-режим выключен!',
                 'reply_markup' => $this->getMainKeyboard()
             ]);
 
@@ -465,19 +465,18 @@ class TelegramBotController extends Controller
 
         try {
 
-            // typing...
             $telegram->sendChatAction([
                 'chat_id' => $chatId,
                 'action' => 'typing'
             ]);
 
             $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . env('DEEPSEEK_API_KEY'),
+                'Authorization' => 'Bearer ' . env('AI_API_KEY'),
                 'Content-Type' => 'application/json',
             ])->timeout(60)->post(
-                'https://api.deepseek.com/chat/completions',
+                'https://logfare.ai/v1/chat/completions',
                 [
-                    'model' => 'deepseek-chat',
+                    'model' => 'gpt-4o-mini',
 
                     'messages' => [
                         [
@@ -491,44 +490,27 @@ class TelegramBotController extends Controller
                     ],
 
                     'temperature' => 0.7,
-                    'max_tokens' => 1000,
+                    'max_tokens' => 500,
                 ]
             );
-
-            if (!$response->successful()) {
-
-                $telegram->sendMessage([
-                    'chat_id' => $chatId,
-                    'text' => '❌ Ошибка AI API: ' . $response->body(),
-                    'reply_markup' => $this->getMainKeyboard()
-                ]);
-
-                return response()->json(['status' => 'ok']);
-            }
 
             $data = $response->json();
 
             $answer = $data['choices'][0]['message']['content']
-                ?? 'Не удалось получить ответ';
+                ?? 'Ошибка ответа AI';
 
-            // Telegram limit
             $answer = mb_substr($answer, 0, 4000);
 
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => $answer,
-                'reply_markup' => json_encode([
-                    'keyboard' => [['/exit']],
-                    'resize_keyboard' => true
-                ])
+                'text' => $answer
             ]);
 
         } catch (\Exception $e) {
 
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => '❌ Ошибка подключения: ' . $e->getMessage(),
-                'reply_markup' => $this->getMainKeyboard()
+                'text' => '❌ ' . $e->getMessage()
             ]);
         }
 
