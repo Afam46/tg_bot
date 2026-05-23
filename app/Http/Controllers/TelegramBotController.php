@@ -145,10 +145,7 @@ class TelegramBotController extends Controller
         
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => "Username: {$user->username}\n
-            FirstName: {$user->first_name}\n
-            LastName: {$user->last_name}\n
-            Решенных задач: {$completedTasksCount}"
+            'text' => "{$user->first_name}\nРешенных задач: {$completedTasksCount}"
         ]);
 
         return response()->json(['status' => 'ok']);
@@ -239,27 +236,72 @@ class TelegramBotController extends Controller
     private function handleGetWeather($telegram, $chatId, $user, $city)
     {
         $apiKey = config('app.weather_api_key');
-        $url = "https://api.openweathermap.org/data/2.5/weather?q={$city}&appid={$apiKey}&units=metric&lang=ru";
         
-        $response = file_get_contents($url);
-        $data = json_decode($response, true);
-        
-        if (!isset($data['main'])) {
+        if (empty($apiKey)) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "Город '{$city}' не найден. Попробуйте ещё раз."
+                'text' => "API погоды не настроен",
+                'reply_markup' => $this->getMainKeyboard()
             ]);
-        } else {
+            $user->state = null;
+            $user->save();
+            return response()->json(['status' => 'ok']);
+        }
+        
+        $url = "https://api.openweathermap.org/data/2.5/weather?q={$city}&appid={$apiKey}&units=metric&lang=ru";
+        
+        try {
+            $response = Http::timeout(10)->get($url);
+
+            if ($response->status() === 401) {
+                throw new \Exception('Неверный или неактивированный API-ключ погоды');
+            }
+            
+            if ($response->status() === 404) {
+                throw new \Exception("Город '{$city}' не найден");
+            }
+            
+            if (!$response->successful()) {
+                throw new \Exception('Сервер погоды временно недоступен');
+            }
+            
+            $data = $response->json();
+            
+            if (!isset($data['main'])) {
+                throw new \Exception('Не удалось получить данные о погоде');
+            }
+
             $temp = $data['main']['temp'];
             $feelsLike = $data['main']['feels_like'];
-            $description = $data['weather'][0]['description'];
+            $tempMin = $data['main']['temp_min'];
+            $tempMax = $data['main']['temp_max'];
+            $pressure = $data['main']['pressure'];
+            $humidity = $data['main']['humidity'];
+            $description = $data['weather'][0]['description'] ?? 'нет данных';
+            $windSpeed = $data['wind']['speed'] ?? 0;
             
-            $text = "🌍 Погода в городе {$city}:\n🌡️ Температура: {$temp}°C\n
-                    🤔 Ощущается как: {$feelsLike}°C\n📖 Описание: {$description}";
+            $text = "🌍 Погода в городе '{$city}'\n\n"
+                . "🌡️ Температура: {$temp}°C\n"
+                . "🤔 Ощущается как: {$feelsLike}°C\n"
+                . "📈 Макс: {$tempMax}°C / 📉 Мин: {$tempMin}°C\n"
+                . "💨 Ветер: {$windSpeed} м/с\n"
+                . "💧 Влажность: {$humidity}%\n"
+                . "📖 Описание: " . ucfirst($description);
             
             $telegram->sendMessage([
                 'chat_id' => $chatId,
                 'text' => $text,
+                'parse_mode' => 'Markdown',
+                'reply_markup' => $this->getMainKeyboard()
+            ]);
+            
+        } catch (\Exception $e) {
+            $errorMessage = $e->getMessage();
+            
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "*Ошибка погоды:* {$errorMessage}\n\nПроверьте название города и попробуйте снова",
+                'parse_mode' => 'Markdown',
                 'reply_markup' => $this->getMainKeyboard()
             ]);
         }
