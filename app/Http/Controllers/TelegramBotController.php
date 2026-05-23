@@ -476,7 +476,7 @@ class TelegramBotController extends Controller
             ])->timeout(60)->post(
                 'https://logfare.ai/v1/chat/completions',
                 [
-                    'model' => 'gpt-4o-mini',
+                    'model' => 'gemini-3-flash',
 
                     'messages' => [
                         [
