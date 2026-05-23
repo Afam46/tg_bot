@@ -13,10 +13,11 @@ return new class extends Migration
     {
         Schema::create('telegram_users', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger('chat_id')->unique(); // ID чата в Telegram
+            $table->bigInteger('chat_id')->unique();
             $table->string('username')->nullable();
             $table->string('first_name')->nullable();
             $table->string('last_name')->nullable();
+            $table->string('state')->nullable();
             $table->timestamps();
         });
     }
