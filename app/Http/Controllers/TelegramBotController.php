@@ -461,12 +461,13 @@ class TelegramBotController extends Controller
         }
 
         try {
-            $response = Http::timeout(30)->post('https://koala.sh/api/chat', [
-                'message' => $query
+            $response = Http::timeout(30)->get('https://api.popcat.xyz/chat', [
+                'msg' => $query
             ]);
 
             if ($response->successful()) {
-                $answer = $response->json()['reply'] ?? 'Не удалось получить ответ';
+                $data = $response->json();
+                $answer = $data['response'] ?? 'Не удалось получить ответ.';
             } else {
                 $answer = "Ошибка API: " . $response->status();
             }
@@ -479,7 +480,7 @@ class TelegramBotController extends Controller
         } catch (\Exception $e) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "Ошибка подключения: " . $e->getMessage()
+                'text' => "Ошибка подключения к ИИ. Попробуйте позже."
             ]);
         }
 
