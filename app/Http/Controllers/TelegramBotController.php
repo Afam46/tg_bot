@@ -31,10 +31,38 @@ class TelegramBotController extends Controller
         ]);
     }
 
+    private function getTasksKeyboard($user)
+    {
+        $tasks = UserTask::where('telegram_user_id', $user->id)
+                        ->where('status', false)
+                        ->get();
+        
+        if ($tasks->isEmpty()) {
+            return null;
+        }
+        
+        $keyboard = [];
+        foreach ($tasks as $task) {
+            $keyboard[] = [
+                [
+                    'text' => "✅ " . mb_substr($task->task_text, 0, 35) . (mb_strlen($task->task_text) > 35 ? '…' : ''),
+                    'callback_data' => "done_" . $task->id
+                ]
+            ];
+        }
+        
+        return json_encode(['inline_keyboard' => $keyboard]);
+    }
+
     public function webhook(Request $request)
     {
         $telegram = new Api(env('TELEGRAM_BOT_TOKEN'));
         $update = $telegram->getWebhookUpdate();
+
+        if ($callbackQuery = $update->getCallbackQuery()) {
+            return $this->handleCallback($telegram, $callbackQuery);
+        }
+
         $message = $update->getMessage();
 
         if (!$message || !$message->getText()) {
@@ -180,18 +208,26 @@ class TelegramBotController extends Controller
         $count = $tasks->count();
 
         if ($count == 0) {
-            $response = "🎉 У тебя нет активных задач!";
-        } else {
-            $response = "📋 Твои задачи ($count):\n";
-            foreach ($tasks as $index => $task) {
-                $response .= ($index + 1) . ". {$task->task_text}\n";
-            }
-            $response .= "\n/done [номер] - ✅ выполнить";
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => "🎉 У тебя нет активных задач! 🎉"
+            ]);
+            return response()->json(['status' => 'ok']);
         }
-
+        
+        $keyboard = $this->getTasksKeyboard($user);
+        
+        $response = "📋 *Твои задачи ({$count}):*\n";
+        foreach ($tasks as $index => $task) {
+            $response .= ($index + 1) . ". {$task->task_text}\n";
+        }
+        $response .= "\n✅ Нажми на задачу, чтобы выполнить";
+        
         $telegram->sendMessage([
             'chat_id' => $chatId,
-            'text' => $response
+            'text' => $response,
+            'parse_mode' => 'Markdown',
+            'reply_markup' => $keyboard
         ]);
 
         return response()->json(['status' => 'ok']);
@@ -316,6 +352,78 @@ class TelegramBotController extends Controller
         $user->save();
         
         return response()->json(['status' => 'ok']);
+    }
+
+    private function handleCallback($telegram, $callbackQuery)
+    {
+        $chatId = $callbackQuery->getMessage()->getChat()->getId();
+        $data = $callbackQuery->getData();
+        
+        $telegram->answerCallbackQuery([
+            'callback_query_id' => $callbackQuery->getId(),
+        ]);
+        
+        if (str_starts_with($data, 'done_')) {
+            $taskId = str_replace('done_', '', $data);
+            $task = UserTask::find($taskId);
+            
+            if ($task && $task->status == false) {
+                $task->status = true;
+                $task->save();
+
+                $this->refreshTasksMessage($telegram, $chatId, $callbackQuery->getMessage()->getMessageId());
+                
+                $telegram->sendMessage([
+                    'chat_id' => $chatId,
+                    'text' => "✅ Задача «{$task->task_text}» выполнена! ✅"
+                ]);
+            } else {
+                $telegram->answerCallbackQuery([
+                    'callback_query_id' => $callbackQuery->getId(),
+                    'text' => "❌ Задача уже была выполнена",
+                    'show_alert' => false
+                ]);
+            }
+        }
+        
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function refreshTasksMessage($telegram, $chatId, $messageId)
+    {
+        $user = TelegramUser::where('chat_id', $chatId)->first();
+        if (!$user) return;
+        
+        $tasks = UserTask::where('telegram_user_id', $user->id)
+                        ->where('status', false)
+                        ->get();
+        
+        $count = $tasks->count();
+        
+        if ($count == 0) {
+            $telegram->editMessageText([
+                'chat_id' => $chatId,
+                'message_id' => $messageId,
+                'text' => "🎉 У тебя нет активных задач! 🎉"
+            ]);
+            return;
+        }
+        
+        $keyboard = $this->getTasksKeyboard($user);
+        
+        $response = "📋 *Твои задачи ({$count}):*\n";
+        foreach ($tasks as $index => $task) {
+            $response .= ($index + 1) . ". {$task->task_text}\n";
+        }
+        $response .= "\n✅ Нажми на задачу, чтобы выполнить";
+        
+        $telegram->editMessageText([
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+            'text' => $response,
+            'parse_mode' => 'Markdown',
+            'reply_markup' => $keyboard
+        ]);
     }
 
     private function handleUnknown($telegram, $chatId)
