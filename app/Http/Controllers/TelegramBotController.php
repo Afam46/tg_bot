@@ -7,8 +7,9 @@ use Telegram\Bot\Api;
 use App\Models\UserTask;
 use App\Models\TelegramUser;
 use Illuminate\Support\Facades\Http;
-use App\Exports\TasksExport;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\TasksExport;
+use App\Imports\TasksImport;
 
 class TelegramBotController extends Controller
 {
@@ -18,7 +19,8 @@ class TelegramBotController extends Controller
             'keyboard' => [
                 ['👤 Мой профиль', '➕ Создать задачу'],
                 ['📋 Мои задачи', '🌤️ Погода'],
-                ['🤖 ИИ-режим', '📥 Экспорт задач']
+                ['📤 Импорт задач', '📥 Экспорт задач'],
+                ['🤖 ИИ-режим'],
             ],
             'resize_keyboard' => true,
             'one_time_keyboard' => false
@@ -68,7 +70,7 @@ class TelegramBotController extends Controller
 
         $message = $update->getMessage();
 
-        if (!$message || !$message->getText()) {
+        if (!$message || !$message->getText() || !$message->getDocument()) {
             return response()->json(['status' => 'ok']);
         }
 
@@ -80,6 +82,11 @@ class TelegramBotController extends Controller
         }
 
         $user = TelegramUser::where('chat_id', $chatId)->first();
+
+        if ($user && $user->state === 'waiting_import' && $message->getDocument()) {
+            return $this->handleImportTasks($telegram, $chatId, $user, $message);
+        }
+
         if (!$user) {
             return $this->handleUnregistered($telegram, $chatId);
         }
@@ -103,6 +110,7 @@ class TelegramBotController extends Controller
             '🌤️ Погода' => 'handleWeather',
             '🤖 ИИ-режим' => 'handleAiMode',
             '📥 Экспорт задач' => 'handleExportTasks',
+            '📤 Импорт задач' => 'handleImport',
         ];
 
         if (isset($handlers[$text])) {
@@ -542,6 +550,75 @@ class TelegramBotController extends Controller
             'document' => fopen($filePath, 'r'),
             'caption' => '📥 Ваш экспорт задач'
         ]);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function handleImport($telegram, $chatId, $user)
+    {
+        $user->state = 'waiting_import';
+        $user->save();
+
+        $telegram->sendMessage([
+            'chat_id' => $chatId,
+            'text' => '📤 Отправьте Excel файл (.xlsx) с задачами',
+            'reply_markup' => json_encode([
+                'remove_keyboard' => true
+            ])
+        ]);
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function handleImportTasks($telegram, $chatId, $user, $message)
+    {
+        try {
+
+            $document = $message->getDocument();
+
+            $fileId = $document->getFileId();
+
+            $file = $telegram->getFile([
+                'file_id' => $fileId
+            ]);
+
+            $filePath = $file->getFilePath();
+
+            $url = "https://api.telegram.org/file/bot" . env('TELEGRAM_BOT_TOKEN') . "/" . $filePath;
+
+            $localPath = storage_path(
+                'app/temp_' . time() . '.xlsx'
+            );
+
+            file_put_contents(
+                $localPath,
+                file_get_contents($url)
+            );
+
+            Excel::import(
+                new TasksImport($user->id),
+                $localPath
+            );
+
+            unlink($localPath);
+
+            $user->state = null;
+            $user->save();
+
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => '✅ Задачи успешно импортированы!',
+                'reply_markup' => $this->getMainKeyboard()
+            ]);
+
+        } catch (\Exception $e) {
+
+            $telegram->sendMessage([
+                'chat_id' => $chatId,
+                'text' => '❌ Ошибка импорта: ' . $e->getMessage(),
+                'reply_markup' => $this->getMainKeyboard()
+            ]);
+        }
 
         return response()->json(['status' => 'ok']);
     }
