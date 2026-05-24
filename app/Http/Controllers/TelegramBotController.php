@@ -7,6 +7,8 @@ use Telegram\Bot\Api;
 use App\Models\UserTask;
 use App\Models\TelegramUser;
 use Illuminate\Support\Facades\Http;
+use App\Exports\TasksExport;
+use Maatwebsite\Excel\Facades\Excel;
 
 class TelegramBotController extends Controller
 {
@@ -16,7 +18,7 @@ class TelegramBotController extends Controller
             'keyboard' => [
                 ['👤 Мой профиль', '➕ Создать задачу'],
                 ['📋 Мои задачи', '🌤️ Погода'],
-                ['🤖 ИИ-режим']
+                ['🤖 ИИ-режим', '📥 Экспорт задач']
             ],
             'resize_keyboard' => true,
             'one_time_keyboard' => false
@@ -100,6 +102,7 @@ class TelegramBotController extends Controller
             '📋 Мои задачи' => 'handleMyTasks',
             '🌤️ Погода' => 'handleWeather',
             '🤖 ИИ-режим' => 'handleAiMode',
+            '📥 Экспорт задач' => 'handleExportTasks',
         ];
 
         if (isset($handlers[$text])) {
@@ -513,6 +516,32 @@ class TelegramBotController extends Controller
                 'text' => '❌ ' . $e->getMessage()
             ]);
         }
+
+        return response()->json(['status' => 'ok']);
+    }
+
+    private function handleExportTasks($telegram, $chatId, $user)
+    {
+        $telegram->sendMessage([
+            'chat_id' => $chatId,
+            'text' => '⏳ Подготавливаю Excel файл...'
+        ]);
+
+        $fileName = 'tasks_' . $user->id . '.xlsx';
+
+        Excel::store(
+            new TasksExport($user->id),
+            $fileName,
+            'public'
+        );
+
+        $filePath = storage_path('app/public/' . $fileName);
+
+        $telegram->sendDocument([
+            'chat_id' => $chatId,
+            'document' => fopen($filePath, 'r'),
+            'caption' => '📥 Ваш экспорт задач'
+        ]);
 
         return response()->json(['status' => 'ok']);
     }
