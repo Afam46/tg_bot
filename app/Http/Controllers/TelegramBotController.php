@@ -588,21 +588,27 @@ class TelegramBotController extends Controller
 
             $url = "https://api.telegram.org/file/bot" . env('TELEGRAM_BOT_TOKEN') . "/" . $telegramFilePath;
 
-            $fileContent = file_get_contents($url);
+            $localPath = storage_path(
+                'app/imports/tasks_' . time() . '.xlsx'
+            );
 
-            $fileName = 'imports/tasks_' . time() . '.xlsx';
-
-            Storage::put($fileName, $fileContent);
+            file_put_contents(
+                $localPath,
+                file_get_contents($url)
+            );
 
             ImportTasksJob::dispatch(
-                $fileName,
                 $user->id,
-                $chatId
+                $chatId,
+                $localPath
             );
+
+            $user->state = null;
+            $user->save();
 
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => '⏳ Импорт поставлен в очередь...'
+                'text' => '⏳ Импорт поставлен в очередь'
             ]);
 
         } catch (\Exception $e) {
