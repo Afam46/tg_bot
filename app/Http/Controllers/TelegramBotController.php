@@ -10,6 +10,8 @@ use Illuminate\Support\Facades\Http;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\TasksExport;
 use App\Imports\TasksImport;
+use App\Jobs\ImportTasksJob;
+use Illuminate\Support\Facades\Storage;
 
 class TelegramBotController extends Controller
 {
@@ -582,41 +584,31 @@ class TelegramBotController extends Controller
                 'file_id' => $fileId
             ]);
 
-            $filePath = $file->getFilePath();
+            $telegramFilePath = $file->getFilePath();
 
-            $url = "https://api.telegram.org/file/bot" . env('TELEGRAM_BOT_TOKEN') . "/" . $filePath;
+            $url = "https://api.telegram.org/file/bot" . env('TELEGRAM_BOT_TOKEN') . "/" . $telegramFilePath;
 
-            $localPath = storage_path(
-                'app/temp_' . time() . '.xlsx'
+            $fileContent = file_get_contents($url);
+
+            $fileName = 'imports/tasks_' . time() . '.xlsx';
+
+            Storage::put($fileName, $fileContent);
+
+            ImportTasksJob::dispatch(
+                $fileName,
+                $user->id,
+                $chatId
             );
-
-            file_put_contents(
-                $localPath,
-                file_get_contents($url)
-            );
-
-            Excel::import(
-                new TasksImport($user->id),
-                $localPath
-            );
-
-            unlink($localPath);
-
-            $user->state = null;
-            $user->save();
 
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => '✅ Задачи успешно импортированы!',
-                'reply_markup' => $this->getMainKeyboard()
+                'text' => '⏳ Импорт поставлен в очередь...'
             ]);
 
         } catch (\Exception $e) {
-
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => '❌ Ошибка импорта: ' . $e->getMessage(),
-                'reply_markup' => $this->getMainKeyboard()
+                'text' => '❌ Ошибка импорта: ' . $e->getMessage()
             ]);
         }
 
