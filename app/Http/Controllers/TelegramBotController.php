@@ -70,12 +70,12 @@ class TelegramBotController extends Controller
 
         $message = $update->getMessage();
 
-        if (!$message || !$message->getText() || !$message->getDocument()) {
+        if (!$message) {
             return response()->json(['status' => 'ok']);
         }
 
         $chatId = $message->getChat()->getId();
-        $text = $message->getText();
+        $text = $message->getText() ?? '';
 
         if ($text === '/start') {
             return $this->handleStart($telegram, $message, $chatId);
