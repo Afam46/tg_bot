@@ -6,15 +6,31 @@ use Illuminate\Http\Request;
 use Telegram\Bot\Api;
 use App\Models\UserTask;
 use App\Models\TelegramUser;
-use Illuminate\Support\Facades\Http;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\TasksExport;
-use App\Imports\TasksImport;
 use App\Jobs\ImportTasksJob;
-use Illuminate\Support\Facades\Storage;
+use App\Services\WeatherService;
+use App\Services\AiService;
+use App\Services\TaskService;
+use App\Services\TelegramService;
 
 class TelegramBotController extends Controller
 {
+    protected $weatherService;
+    protected $aiService;
+    protected $taskService;
+    protected $telegramService;
+
+    public function __construct(WeatherService $weatherService, AiService $aiService,
+    TaskService $taskService, TelegramService $telegramService)
+    {
+        $this->weatherService = $weatherService;
+        $this->aiService = $aiService;
+        $this->taskService = $taskService;
+        $this->telegramService = $telegramService;
+    }
+
+
     private function getMainKeyboard()
     {
         return json_encode([
@@ -40,9 +56,7 @@ class TelegramBotController extends Controller
 
     private function getTasksKeyboard($user)
     {
-        $tasks = UserTask::where('telegram_user_id', $user->id)
-                        ->where('status', false)
-                        ->get();
+        $tasks = $this->taskService->getActiveTasks($user->id);
         
         if ($tasks->isEmpty()) {
             return null;
@@ -146,11 +160,7 @@ class TelegramBotController extends Controller
             ? "✅ Авторизация прошла успешно" 
             : "✅ Вы авторизованы";
 
-        $telegram->sendMessage([
-            'chat_id' => $chatId,
-            'text' => $text,
-            'reply_markup' => $this->getMainKeyboard()
-        ]);
+        $this->telegramService->sendMessage($chatId, $text, $this->getMainKeyboard());
 
         return response()->json(['status' => 'ok']);
     }
@@ -168,12 +178,8 @@ class TelegramBotController extends Controller
 
     private function handleWaitingTask($telegram, $chatId, $user, $text)
     {
-        UserTask::create([
-            'telegram_user_id' => $user->id,
-            'task_text' => $text,
-            'status' => false
-        ]);
-
+        $tasks = $this->taskService->createTask($user->id, $text);
+        
         $user->state = null;
         $user->save();
 
@@ -220,9 +226,7 @@ class TelegramBotController extends Controller
 
     private function handleMyTasks($telegram, $chatId, $user)
     {
-        $tasks = UserTask::where('telegram_user_id', $user->id)
-                        ->where('status', false)
-                        ->get();
+        $tasks = $this->taskService->getActiveTasks($user->id);
         
         $count = $tasks->count();
 
@@ -254,9 +258,7 @@ class TelegramBotController extends Controller
 
     private function handleDone($telegram, $chatId, $user, $taskNumber)
     {
-        $tasks = UserTask::where('telegram_user_id', $user->id)
-                        ->where('status', false)
-                        ->get();
+        $tasks = $this->taskService->getActiveTasks($user->id);
 
         $index = $taskNumber - 1;
 
@@ -296,80 +298,29 @@ class TelegramBotController extends Controller
 
     private function handleGetWeather($telegram, $chatId, $user, $city)
     {
-        $apiKey = config('app.weather_api_key');
-        
-        if (empty($apiKey)) {
-            $telegram->sendMessage([
-                'chat_id' => $chatId,
-                'text' => "❌ API погоды не настроен",
-                'reply_markup' => $this->getMainKeyboard()
-            ]);
-            $user->state = null;
-            $user->save();
-            return response()->json(['status' => 'ok']);
-        }
-        
-        $url = "https://api.openweathermap.org/data/2.5/weather?q={$city}&appid={$apiKey}&units=metric&lang=ru";
-        
         try {
-            $response = Http::timeout(10)->get($url);
 
-            if ($response->status() === 401) {
-                throw new \Exception('Неверный или неактивированный API-ключ погоды');
-            }
-            
-            if ($response->status() === 404) {
-                throw new \Exception("Город '{$city}' не найден");
-            }
-            
-            if (!$response->successful()) {
-                throw new \Exception('Сервер погоды временно недоступен');
-            }
-            
-            $data = $response->json();
-            
-            if (!isset($data['main'])) {
-                throw new \Exception('Не удалось получить данные о погоде');
-            }
-
-            $temp = $data['main']['temp'];
-            $feelsLike = $data['main']['feels_like'];
-            $tempMin = $data['main']['temp_min'];
-            $tempMax = $data['main']['temp_max'];
-            $pressure = $data['main']['pressure'];
-            $humidity = $data['main']['humidity'];
-            $description = $data['weather'][0]['description'] ?? 'нет данных';
-            $windSpeed = $data['wind']['speed'] ?? 0;
-            
-            $text = "🌍 Погода в городе '{$city}'\n\n"
-                . "🌡️ Температура: {$temp}°C\n"
-                . "🤔 Ощущается как: {$feelsLike}°C\n"
-                . "📈 Макс: {$tempMax}°C / 📉 Мин: {$tempMin}°C\n"
-                . "💨 Ветер: {$windSpeed} м/с\n"
-                . "💧 Влажность: {$humidity}%\n"
-                . "📖 Описание: " . ucfirst($description);
+            $weather = $this->weatherService->getWeather($city);
             
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => $text,
-                'parse_mode' => 'Markdown',
-                'reply_markup' => $this->getMainKeyboard()
+                'text' =>
+                    "🌡 Температура: {$weather['temp']}°C\n" .
+                    "🤔 Ощущается: {$weather['feels_like']}°C\n" .
+                    "💧 Влажность: {$weather['humidity']}%\n" .
+                    "💨 Ветер: {$weather['wind_speed']} м/с"
             ]);
-            
+
         } catch (\Exception $e) {
-            $errorMessage = $e->getMessage();
-            
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => "❌ {$errorMessage}\n\nПроверьте название города и попробуйте снова",
-                'parse_mode' => 'Markdown',
-                'reply_markup' => $this->getMainKeyboard()
+                'text' => '❌ ' . $e->getMessage()
             ]);
         }
-        
+
         $user->state = null;
         $user->save();
-        
+
         return response()->json(['status' => 'ok']);
     }
 
@@ -413,9 +364,7 @@ class TelegramBotController extends Controller
         $user = TelegramUser::where('chat_id', $chatId)->first();
         if (!$user) return;
         
-        $tasks = UserTask::where('telegram_user_id', $user->id)
-                        ->where('status', false)
-                        ->get();
+        $tasks = $this->taskService->getActiveTasks($user->id);
         
         $count = $tasks->count();
         
@@ -478,39 +427,7 @@ class TelegramBotController extends Controller
 
         try {
 
-            $telegram->sendChatAction([
-                'chat_id' => $chatId,
-                'action' => 'typing'
-            ]);
-
-            $response = Http::withHeaders([
-                'Authorization' => 'Bearer ' . env('AI_API_KEY'),
-                'Content-Type' => 'application/json',
-            ])->timeout(60)->post(
-                'https://logfare.ai/v1/chat/completions',
-                [
-                    'model' => 'deepseek-v4-flash',
-
-                    'messages' => [
-                        [
-                            'role' => 'system',
-                            'content' => 'Ты полезный Telegram ассистент.'
-                        ],
-                        [
-                            'role' => 'user',
-                            'content' => $query
-                        ]
-                    ],
-
-                    'temperature' => 0.7,
-                    'max_tokens' => 500,
-                ]
-            );
-
-            $data = $response->json();
-
-            $answer = $data['choices'][0]['message']['content']
-                ?? 'Ошибка ответа AI';
+            $answer = $this->aiService->ask($query);
 
             $answer = mb_substr($answer, 0, 4000);
 
