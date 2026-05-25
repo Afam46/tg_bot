@@ -3,104 +3,74 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Telegram\Bot\Api;
-use App\Models\UserTask;
-use App\Models\TelegramUser;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\TasksExport;
-use App\Jobs\ImportTasksJob;
 use App\Services\WeatherService;
 use App\Services\AiService;
 use App\Services\TaskService;
 use App\Services\TelegramService;
+use App\Services\UserStateService;
+use App\Services\ImportService;
+use App\Services\UserService;
+use App\Services\KeyboardService;
 
 class TelegramBotController extends Controller
 {
-    protected $weatherService;
-    protected $aiService;
-    protected $taskService;
-    protected $telegramService;
+    protected WeatherService $weatherService;
+    protected AiService $aiService;
+    protected TaskService $taskService;
+    protected TelegramService $telegramService;
+    protected UserStateService $userStateService;
+    protected ImportService $importService;
+    protected UserService $userService;
+    protected KeyboardService $keyboardService;
 
     public function __construct(WeatherService $weatherService, AiService $aiService,
-    TaskService $taskService, TelegramService $telegramService)
+    TaskService $taskService, TelegramService $telegramService, UserStateService $userStateService,
+    ImportService $importService, UserService $userService, KeyboardService $keyboardService)
     {
         $this->weatherService = $weatherService;
         $this->aiService = $aiService;
         $this->taskService = $taskService;
         $this->telegramService = $telegramService;
+        $this->userStateService = $userStateService;
+        $this->importService = $importService;
+        $this->userService = $userService;
+        $this->keyboardService = $keyboardService;
     }
 
-
-    private function getMainKeyboard()
+    private function ok()
     {
-        return json_encode([
-            'keyboard' => [
-                ['👤 Мой профиль', '➕ Создать задачу'],
-                ['📋 Мои задачи', '🌤️ Погода'],
-                ['📤 Импорт задач', '📥 Экспорт задач'],
-                ['🤖 ИИ-режим'],
-            ],
-            'resize_keyboard' => true,
-            'one_time_keyboard' => false
-        ]);
-    }
-
-    private function getStartKeyboard()
-    {
-        return json_encode([
-            'keyboard' => [['/start']],
-            'resize_keyboard' => true,
-            'one_time_keyboard' => false
-        ]);
-    }
-
-    private function getTasksKeyboard($user)
-    {
-        $tasks = $this->taskService->getActiveTasks($user->id);
-        
-        if ($tasks->isEmpty()) {
-            return null;
-        }
-        
-        $keyboard = [];
-        foreach ($tasks as $task) {
-            $keyboard[] = [
-                [
-                    'text' => "✅ " . mb_substr($task->task_text, 0, 35) . (mb_strlen($task->task_text) > 35 ? '…' : ''),
-                    'callback_data' => "done_" . $task->id
-                ]
-            ];
-        }
-        
-        return json_encode(['inline_keyboard' => $keyboard]);
+        return response()->json(['status' => 'ok']);
     }
 
     public function webhook(Request $request)
     {
-        $telegram = new Api(env('TELEGRAM_BOT_TOKEN'));
+        $telegram = $this->telegramService->getTelegram();
         $update = $telegram->getWebhookUpdate();
 
         if ($callbackQuery = $update->getCallbackQuery()) {
-            return $this->handleCallback($telegram, $callbackQuery);
+            return $this->handleCallback($callbackQuery);
         }
 
         $message = $update->getMessage();
 
         if (!$message) {
-            return response()->json(['status' => 'ok']);
+            return $this->ok();
         }
 
         $chatId = $message->getChat()->getId();
         $text = $message->getText() ?? '';
 
         if ($text === '/start') {
-            return $this->handleStart($telegram, $message, $chatId);
+            return $this->handleStart($message, $chatId);
         }
 
-        $user = TelegramUser::where('chat_id', $chatId)->first();
+        $user = $this->userService->findUser($chatId);
 
         if ($user && $user->state === 'waiting_import' && $message->getDocument()) {
-            return $this->handleImportTasks($telegram, $chatId, $user, $message);
+            return $this->handleImportTasks($chatId, $user, $message);
         }
 
         if (!$user) {
@@ -108,15 +78,15 @@ class TelegramBotController extends Controller
         }
 
         if ($user->state === 'waiting_task') {
-            return $this->handleWaitingTask($telegram, $chatId, $user, $text);
+            return $this->handleWaitingTask($chatId, $user, $text);
         }
 
         if ($user->state === 'waiting_city') {
-            return $this->handleGetWeather($telegram, $chatId, $user, $text);
+            return $this->handleGetWeather($chatId, $user, $text);
         }
 
         if ($user->state === 'waiting_ai') {
-            return $this->handleAiQuery($telegram, $chatId, $user, $text);
+            return $this->handleAiQuery($chatId, $user, $text);
         }
 
         $handlers = [
@@ -131,91 +101,67 @@ class TelegramBotController extends Controller
 
         if (isset($handlers[$text])) {
             $method = $handlers[$text];
-            return $this->$method($telegram, $chatId, $user);
+            return $this->$method($chatId, $user);
         }
 
         if (preg_match('/^\/done (\d+)$/', $text, $matches)) {
-            return $this->handleDone($telegram, $chatId, $user, (int)$matches[1]);
+            return $this->handleDone($chatId, $user, (int)$matches[1]);
         }
 
-        return $this->handleUnknown($telegram, $chatId);
+        return $this->handleUnknown($chatId);
     }
 
-    private function handleStart($telegram, $message, $chatId)
+    private function handleStart($message, $chatId)
     {
-        $firstName = $message->getChat()->getFirstName() ?? 'User';
-        $lastName = $message->getChat()->getLastName() ?? null;
-        $username = $message->getChat()->getUsername();
+        $text = $this->userService->updateOrCreateUser($message, $chatId);
 
-        $user = TelegramUser::updateOrCreate(
-            ['chat_id' => $chatId],
-            [
-                'username' => $username,
-                'first_name' => $firstName,
-                'last_name' => $lastName
-            ]
-        );
+        $this->telegramService->sendMessage($chatId, $text, $this->keyboardService->getMainKeyboard());
 
-        $text = $user->wasRecentlyCreated 
-            ? "✅ Авторизация прошла успешно" 
-            : "✅ Вы авторизованы";
-
-        $this->telegramService->sendMessage($chatId, $text, $this->getMainKeyboard());
-
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
     private function handleUnregistered($chatId)
     {
         $this->telegramService->sendMessage($chatId, 'Привет! Напиши /start, чтобы авторизоваться',
-            $this->getStartKeyboard());
+            $this->keyboardService->getStartKeyboard());
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleWaitingTask($telegram, $chatId, $user, $text)
+    private function handleWaitingTask($chatId, $user, $text)
     {
         $this->taskService->createTask($user->id, $text);
-        
-        $user->state = null;
-        $user->save();
+        $this->userStateService->setState($user, null);
 
         $this->telegramService->sendMessage($chatId, "✅ Задача добавлена!\n📋 Текст: {$text}",
-            $this->getMainKeyboard());
+            $this->keyboardService->getMainKeyboard());
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleProfile($telegram, $chatId, $user)
+    private function handleProfile($chatId, $user)
     {   
-        $allTasksCount = $user->tasks()->count();
-        $completedTasksCount = $user->tasks()->where('status', true)->count();
-        $unCompletedTasksCount = $allTasksCount - $completedTasksCount;
+        $stats = $this->taskService->getStats($user);
       
         $text = "👤 {$user->username} 👤\n\n" . "📛 Имя: {$user->first_name}\n"
-        . "📋 Всего задач: {$allTasksCount}\n" . "✅ Решенных задач: {$completedTasksCount}\n"
-        . "❌ Осталось задач: {$unCompletedTasksCount}";
+        . "📋 Всего задач: {$stats['all']}\n" . "✅ Решенных задач: {$stats['completed']}\n"
+        . "❌ Осталось задач: {$stats['uncompleted']}";
 
         $this->telegramService->sendMessage($chatId, $text);
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleCreateTask($telegram, $chatId, $user)
+    private function handleCreateTask($chatId, $user)
     {
-        $user->state = 'waiting_task';
-        $user->save();
-        
-        $telegram->sendMessage([
-            'chat_id' => $chatId,
-            'text' => '✏️ Опиши задачу:',
-            'reply_markup' => json_encode(['remove_keyboard' => true])
-        ]);
+        $this->userStateService->setState($user, 'waiting_task');
 
-        return response()->json(['status' => 'ok']);
+        $this->telegramService->sendMessage($chatId, '✏️ Опиши задачу:', json_encode(['remove_keyboard' => true]));
+
+        return $this->ok();
     }
 
-    private function handleMyTasks($telegram, $chatId, $user)
+    private function handleMyTasks($chatId, $user)
     {
         $tasks = $this->taskService->getActiveTasks($user->id);
         
@@ -223,7 +169,7 @@ class TelegramBotController extends Controller
 
         if ($count == 0) {
             $this->telegramService->sendMessage($chatId, "🎉 У тебя нет активных задач! 🎉");
-            return response()->json(['status' => 'ok']);
+            return $this->ok();
         }
         
         $response = "📋 *Твои задачи ({$count}):*\n";
@@ -232,12 +178,12 @@ class TelegramBotController extends Controller
         }
         $response .= "\n✅ Нажми на задачу, чтобы выполнить";
         
-        $this->telegramService->sendMessage($chatId, $response, $this->getTasksKeyboard($user));
+        $this->telegramService->sendMessage($chatId, $response, $this->keyboardService->getTasksKeyboard($user->id));
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleDone($telegram, $chatId, $user, $taskNumber)
+    private function handleDone($chatId, $user, $taskNumber)
     {
         $tasks = $this->taskService->getActiveTasks($user->id);
 
@@ -245,32 +191,28 @@ class TelegramBotController extends Controller
 
         if (!isset($tasks[$index])) {
             $this->telegramService->sendMessage($chatId, "❌ Задача с номером {$taskNumber} не найдена!" );
-            return response()->json(['status' => 'ok']);
+            return $this->ok();
         }
 
         $task = $tasks[$index];
-        $task->status = true;
-        $task->save();
+        
+        $this->taskService->completeTask($task);
         $this->telegramService->sendMessage($chatId, "✅ Задача '{$task->task_text}' выполнена!" );
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleWeather($telegram, $chatId, $user)
+    private function handleWeather($chatId, $user)
     {
-        $user->state = 'waiting_city';
-        $user->save();
+        $this->userStateService->setState($user, 'waiting_city');
         
-        $telegram->sendMessage([
-            'chat_id' => $chatId,
-            'text' => '🔍 Введите название города 🔍',
-            'reply_markup' => json_encode(['remove_keyboard' => true])
-        ]);
+        $this->telegramService->sendMessage($chatId, '🔍 Введите название города 🔍',
+        json_encode(['remove_keyboard' => true]));
         
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleGetWeather($telegram, $chatId, $user, $city)
+    private function handleGetWeather($chatId, $user, $city)
     {
         try {
 
@@ -280,53 +222,49 @@ class TelegramBotController extends Controller
             "🤔 Ощущается: {$weather['feels_like']}°C\n" . "💧 Влажность: {$weather['humidity']}%\n" .
             "💨 Ветер: {$weather['wind_speed']} м/с";
 
-            $this->telegramService->sendMessage($chatId, $text, $this->getMainKeyboard());
+            $this->telegramService->sendMessage($chatId, $text, $this->keyboardService->getMainKeyboard());
 
         } catch (\Exception $e) {
+            Log::error('Ошибка: ' . $e->getMessage());
+            
             $this->telegramService->sendMessage($chatId, '❌ ' . $e->getMessage());
         }
 
-        $user->state = null;
-        $user->save();
+        $this->userStateService->setState($user, null);
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleCallback($telegram, $callbackQuery)
+    private function handleCallback($callbackQuery)
     {
         $chatId = $callbackQuery->getMessage()->getChat()->getId();
         $data = $callbackQuery->getData();
-        
-        $telegram->answerCallbackQuery([
-            'callback_query_id' => $callbackQuery->getId(),
-        ]);
+
+        $this->telegramService->answerCallbackQuery($callbackQuery);
         
         if (str_starts_with($data, 'done_')) {
             $taskId = str_replace('done_', '', $data);
-            $task = UserTask::find($taskId);
+            $task = $this->taskService->findTask($taskId);
             
             if ($task && $task->status == false) {
-                $task->status = true;
-                $task->save();
 
-                $this->refreshTasksMessage($telegram, $chatId, $callbackQuery->getMessage()->getMessageId());
-
+                $this->taskService->completeTask($task);
+                $this->refreshTasksMessage($chatId, $callbackQuery->getMessage()->getMessageId());
                 $this->telegramService->sendMessage($chatId, "✅ Задача «{$task->task_text}» выполнена! ✅");
+
             } else {
-                $telegram->answerCallbackQuery([
-                    'callback_query_id' => $callbackQuery->getId(),
-                    'text' => "❌ Задача уже была выполнена",
-                    'show_alert' => false
-                ]);
+                $this->telegramService->answerCallbackQuery($callbackQuery,
+                "❌ Задача уже была выполнена", false);
             }
         }
         
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function refreshTasksMessage($telegram, $chatId, $messageId)
+    private function refreshTasksMessage($chatId, $messageId)
     {
-        $user = TelegramUser::where('chat_id', $chatId)->first();
+        $user = $this->userService->findUser($chatId);
+
         if (!$user) return;
         
         $tasks = $this->taskService->getActiveTasks($user->id);
@@ -334,62 +272,45 @@ class TelegramBotController extends Controller
         $count = $tasks->count();
         
         if ($count == 0) {
-            $telegram->editMessageText([
-                'chat_id' => $chatId,
-                'message_id' => $messageId,
-                'text' => "🎉 У тебя нет активных задач! 🎉"
-            ]);
+            $this->telegramService->editMessageText($chatId, $messageId, "🎉 У тебя нет активных задач! 🎉");
             return;
         }
         
-        $keyboard = $this->getTasksKeyboard($user);
+        $keyboard = $this->keyboardService->getTasksKeyboard($user->id);
         
         $response = "📋 *Твои задачи ({$count}):*\n";
         foreach ($tasks as $index => $task) {
             $response .= ($index + 1) . ". {$task->task_text}\n";
         }
         $response .= "\n✅ Нажми на задачу, чтобы выполнить";
-        
-        $telegram->editMessageText([
-            'chat_id' => $chatId,
-            'message_id' => $messageId,
-            'text' => $response,
-            'parse_mode' => 'Markdown',
-            'reply_markup' => $keyboard
-        ]);
+
+        $this->telegramService->editMessageText($chatId, $messageId, $response, 'Markdown', $keyboard);
     }
 
-    private function handleAiMode($telegram, $chatId, $user)
+    private function handleAiMode($chatId, $user)
     {
-        $user->state = 'waiting_ai';
-        $user->save();
+        $this->userStateService->setState($user, 'waiting_ai');
+
+        $text = "🤖 ИИ-режим активирован!\n\nЗадайте любой вопрос, и я постараюсь ответить.".
+        "\n\nЧтобы выключить режим, отправьте команду /exit";
+
+        $this->telegramService->sendMessage($chatId, $text, json_encode(['remove_keyboard' => true]));
         
-        $telegram->sendMessage([
-            'chat_id' => $chatId,
-            'text' => "🤖 ИИ-режим активирован!\n\nЗадайте любой вопрос, и я постараюсь ответить.\n\nЧтобы выключить режим, отправьте команду /exit",
-            'parse_mode' => 'Markdown',
-            'reply_markup' => json_encode(['remove_keyboard' => true])
-        ]);
-        
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleAiQuery($telegram, $chatId, $user, $query)
+    private function handleAiQuery($chatId, $user, $query)
     {
         if ($query === '/exit') {
-            $user->state = null;
-            $user->save();
+            $this->userStateService->setState($user, null);
 
-            $this->telegramService->sendMessage($chatId, '🤖 ИИ-режим выключен!', $this->getMainKeyboard());
+            $this->telegramService->sendMessage($chatId, '🤖 ИИ-режим выключен!', $this->keyboardService->getMainKeyboard());
 
-            return response()->json(['status' => 'ok']);
+            return $this->ok();
         }
 
         try {
-            $telegram->sendChatAction([
-                'chat_id' => $chatId,
-                'action' => 'typing'
-            ]);
+            $this->telegramService->sendChatAction($chatId);
 
             $answer = $this->aiService->ask($query);
 
@@ -398,13 +319,14 @@ class TelegramBotController extends Controller
             $this->telegramService->sendMessage($chatId, $answer);
 
         } catch (\Exception $e) {
-            $this->telegramService->sendMessage($chatId, '❌ ' . $e->getMessage(), $this->getMainKeyboard());
+            Log::error('Ошибка: ' . $e->getMessage());
+            $this->telegramService->sendMessage($chatId, '❌ ' . $e->getMessage(), $this->keyboardService->getMainKeyboard());
         }
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleExportTasks($telegram, $chatId, $user)
+    private function handleExportTasks($chatId, $user)
     {
         $this->telegramService->sendMessage($chatId, '⏳ Подготавливаю Excel файл...');
 
@@ -418,77 +340,41 @@ class TelegramBotController extends Controller
 
         $filePath = storage_path('app/public/' . $fileName);
 
-        $telegram->sendDocument([
-            'chat_id' => $chatId,
-            'document' => fopen($filePath, 'r'),
-            'caption' => '📥 Ваш экспорт задач',
-            'reply_markup' => $this->getMainKeyboard()
-        ]);
+        $this->telegramService->sendDocument($chatId, $filePath,
+        '📥 Ваш экспорт задач', $this->keyboardService->getMainKeyboard());
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleImport($telegram, $chatId, $user)
+    private function handleImport($chatId, $user)
     {
-        $user->state = 'waiting_import';
-        $user->save();
+        $this->userStateService->setState($user, 'waiting_import');
 
-        $telegram->sendMessage([
-            'chat_id' => $chatId,
-            'text' => '📤 Отправьте Excel файл (.xlsx) с задачами',
-            'reply_markup' => json_encode(['remove_keyboard' => true])
-        ]);
+        $this->telegramService->sendMessage($chatId, '📤 Отправьте Excel файл (.xlsx) с задачами',
+        json_encode(['remove_keyboard' => true]));
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleImportTasks($telegram, $chatId, $user, $message)
+    private function handleImportTasks($chatId, $user, $message)
     {
         try {
 
-            $document = $message->getDocument();
-
-            $fileId = $document->getFileId();
-
-            $file = $telegram->getFile([
-                'file_id' => $fileId
-            ]);
-
-            $telegramFilePath = $file->getFilePath();
-
-            $url = "https://api.telegram.org/file/bot" . env('TELEGRAM_BOT_TOKEN') . "/" . $telegramFilePath;
-
-            $localPath = storage_path(
-                'app/imports/tasks_' . time() . '.xlsx'
-            );
-
-            file_put_contents(
-                $localPath,
-                file_get_contents($url)
-            );
-
-            ImportTasksJob::dispatch(
-                $user->id,
-                $chatId,
-                $localPath
-            );
-
-            $user->state = null;
-            $user->save();
-
-            $this->telegramService->sendMessage($chatId, '⏳ Импорт поставлен в очередь', $this->getMainKeyboard());
-            
+            $this->importService->importFile($this->telegramService->getTelegram(), $message, $user, $chatId);
+            $this->userStateService->setState($user, null);
+            $this->telegramService->sendMessage($chatId, '⏳ Импорт поставлен в очередь', $this->keyboardService->getMainKeyboard());
+        
         } catch (\Exception $e) {
-            $this->telegramService->sendMessage($chatId, '❌ Ошибка импорта: ' . $e->getMessage(), $this->getMainKeyboard());
+            Log::error('Ошибка: ' . $e->getMessage());
+            $this->telegramService->sendMessage($chatId, '❌ Ошибка импорта: ' . $e->getMessage(), $this->keyboardService->getMainKeyboard());
         }
 
-        return response()->json(['status' => 'ok']);
+        return $this->ok();
     }
 
-    private function handleUnknown($telegram, $chatId)
+    private function handleUnknown($chatId)
     {
-        $this->telegramService->sendMessage($chatId, '❌ Используйте кнопки', $this->getMainKeyboard());
-
-        return response()->json(['status' => 'ok']);
+        $this->telegramService->sendMessage($chatId, '❌ Используйте кнопки', $this->keyboardService->getMainKeyboard());
+        return $this->ok();
     }
 }

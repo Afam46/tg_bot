@@ -15,13 +15,30 @@ class TaskService
         ]);
     }
 
-    public function completeTask(int $taskId): void
+    public function completeTask($task)
     {
-        $task = UserTask::findOrFail($taskId);
-
         $task->status = true;
-
         $task->save();
+    }
+
+    public function getStats($user)
+    {
+        $allTasksCount = $user->tasks()->count();
+        $completedTasksCount = $user->tasks()->where('status', true)->count();
+        $uncompletedTasksCount = $allTasksCount - $completedTasksCount;
+
+        $stats = [
+            'all' => $allTasksCount,
+            'completed' => $completedTasksCount,
+            'uncompleted' => $uncompletedTasksCount
+        ];
+
+        return $stats;
+    }
+
+    public function findTask($taskId)
+    {
+        return UserTask::find($taskId);
     }
 
     public function getActiveTasks(int $userId)
