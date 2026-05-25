@@ -5,6 +5,12 @@
 ## 🚀 Попробовать
 **[@ai_afam_bot](https://t.me/ai_afam_bot)**
 
+## 📸 Скриншоты
+
+![](screenshots/scr1.png)<br><br><br><br>
+![](screenshots/scr2.png)<br><br><br><br>
+![](screenshots/scr3.png)
+
 ## ✨ Возможности
 
 ### 🤖 AI-ассистент
