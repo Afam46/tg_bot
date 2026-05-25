@@ -520,10 +520,10 @@ class TelegramBotController extends Controller
             ]);
 
         } catch (\Exception $e) {
-
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => '❌ ' . $e->getMessage()
+                'text' => '❌ ' . $e->getMessage(),
+                'reply_markup' => $this->getMainKeyboard()
             ]);
         }
 
@@ -550,7 +550,8 @@ class TelegramBotController extends Controller
         $telegram->sendDocument([
             'chat_id' => $chatId,
             'document' => fopen($filePath, 'r'),
-            'caption' => '📥 Ваш экспорт задач'
+            'caption' => '📥 Ваш экспорт задач',
+            'reply_markup' => $this->getMainKeyboard()
         ]);
 
         return response()->json(['status' => 'ok']);
@@ -608,13 +609,15 @@ class TelegramBotController extends Controller
 
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => '⏳ Импорт поставлен в очередь'
+                'text' => '⏳ Импорт поставлен в очередь',
+                'reply_markup' => $this->getMainKeyboard()
             ]);
 
         } catch (\Exception $e) {
             $telegram->sendMessage([
                 'chat_id' => $chatId,
-                'text' => '❌ Ошибка импорта: ' . $e->getMessage()
+                'text' => '❌ Ошибка импорта: ' . $e->getMessage(),
+                'reply_markup' => $this->getMainKeyboard()
             ]);
         }
 
