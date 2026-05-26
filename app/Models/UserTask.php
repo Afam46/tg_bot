@@ -11,6 +11,8 @@ class UserTask extends Model
         'telegram_user_id', 'task_text', 'status'
     ];
 
+    public $timestamps = false;
+
     protected $casts = [
         'status' => 'boolean',
     ];
