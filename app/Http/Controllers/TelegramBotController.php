@@ -302,29 +302,24 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleAiQuery(int $chatId, object $user, string $query): JsonResponse
+    private function handleAiQuery(int $chatId, object $user,string $query): JsonResponse
     {
         if ($query === '/exit') {
+
             $this->userService->setState($user, null);
 
-            $this->telegramService->sendMessage($chatId, '🤖 ИИ-режим выключен!', $this->keyboardService->getMainKeyboard());
+            $this->telegramService->sendMessage(
+                $chatId,
+                '🤖 ИИ-режим выключен!',
+                $this->keyboardService->getMainKeyboard()
+            );
 
             return $this->ok();
         }
 
-        try {
-            $this->telegramService->sendChatAction($chatId);
+        $this->telegramService->sendChatAction($chatId);
 
-            $answer = $this->aiService->ask($query);
-
-            $answer = mb_substr($answer, 0, 4000);
-
-            $this->telegramService->sendMessage($chatId, $answer);
-
-        } catch (\Exception $e) {
-            Log::error('Ошибка: ' . $e->getMessage());
-            $this->telegramService->sendMessage($chatId, '❌ ' . $e->getMessage(), $this->keyboardService->getMainKeyboard());
-        }
+        $this->aiService->process($chatId, $query);
 
         return $this->ok();
     }

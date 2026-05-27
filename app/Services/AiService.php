@@ -2,11 +2,17 @@
 
 namespace App\Services;
 
+use App\Jobs\ProcessAiMessageJob;
 use Illuminate\Support\Facades\Http;
 
 class AiService
 {
-    public function ask(string $query)
+    public function process(int $chatId, string $query): void
+    {
+        ProcessAiMessageJob::dispatch($chatId, $query);
+    }
+
+    public function ask(string $query): string
     {
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . env('AI_API_KEY'),
@@ -31,6 +37,7 @@ class AiService
 
         $data = $response->json();
 
-        return $data['choices'][0]['message']['content'] ?? 'Ошибка AI';
+        return $data['choices'][0]['message']['content']
+            ?? 'Ошибка AI';
     }
 }
