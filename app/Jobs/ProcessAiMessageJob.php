@@ -33,7 +33,7 @@ class ProcessAiMessageJob implements ShouldQueue
 
             $telegramService->sendMessage(
                 $this->chatId,
-                '❌ Ошибка AI сервиса'
+                '❌ Ошибка AI сервиса: ' . $e->getMessage()
             );
         }
     }
