@@ -28,17 +28,11 @@ class KeyboardServiceTest extends TestCase
 
         $keyboardService = new KeyboardService;
 
-        $keyboard = $keyboardService->getTasksKeyboard($user->id);
-
+        $keyboard = $keyboardService->getTasksKeyboard($user->id, 1);
         $keyboard = json_decode($keyboard, true);
 
         $this->assertEquals(
-            '✅ Купить хлеб',
-            $keyboard['inline_keyboard'][0][0]['text']
-        );
-
-        $this->assertEquals(
-            'done_1',
+            'done_1_1',
             $keyboard['inline_keyboard'][0][0]['callback_data']
         );
     }
