@@ -14,6 +14,7 @@ use App\Services\TelegramService;
 use App\Services\ImportService;
 use App\Services\UserService;
 use App\Services\KeyboardService;
+use App\Services\ExportService;
 
 class TelegramBotController extends Controller
 {
@@ -24,6 +25,7 @@ class TelegramBotController extends Controller
     protected ImportService $importService;
     protected UserService $userService;
     protected KeyboardService $keyboardService;
+    protected ExportService $exportService;
 
     public function __construct(
         WeatherService $weatherService,
@@ -32,7 +34,8 @@ class TelegramBotController extends Controller
         TelegramService $telegramService,
         ImportService $importService,
         UserService $userService,
-        KeyboardService $keyboardService
+        KeyboardService $keyboardService,
+        ExportService $exportService
     ) {
         $this->weatherService = $weatherService;
         $this->aiService = $aiService;
@@ -41,6 +44,7 @@ class TelegramBotController extends Controller
         $this->importService = $importService;
         $this->userService = $userService;
         $this->keyboardService = $keyboardService;
+        $this->exportService = $exportService;
     }
 
     private function ok(): JsonResponse
@@ -326,20 +330,10 @@ class TelegramBotController extends Controller
 
     private function handleExportTasks(int $chatId, object $user): JsonResponse
     {
-        $this->telegramService->sendMessage($chatId, '⏳ Подготавливаю Excel файл...');
-
-        $fileName = 'tasks_' . $user->id . '.xlsx';
-
-        Excel::store(
-            new TasksExport($user->id),
-            $fileName,
-            'public'
-        );
-
-        $filePath = storage_path('app/public/' . $fileName);
-
-        $this->telegramService->sendDocument($chatId, $filePath,
-        '📥 Ваш экспорт задач', $this->keyboardService->getMainKeyboard());
+        $this->exportService->exportFile($user, $chatId);
+        
+        $this->telegramService->sendMessage($chatId, '⏳ Экспорт поставлен в очередь',
+            $this->keyboardService->getMainKeyboard());
 
         return $this->ok();
     }
@@ -349,7 +343,7 @@ class TelegramBotController extends Controller
         $this->userService->setState($user, 'waiting_import');
 
         $this->telegramService->sendMessage($chatId, '📤 Отправьте Excel файл (.xlsx) с задачами',
-        json_encode(['remove_keyboard' => true]));
+            json_encode(['remove_keyboard' => true]));
 
         return $this->ok();
     }
@@ -360,7 +354,8 @@ class TelegramBotController extends Controller
 
             $this->importService->importFile($this->telegramService->getTelegram(), $message, $user, $chatId);
             $this->userService->setState($user, null);
-            $this->telegramService->sendMessage($chatId, '⏳ Импорт поставлен в очередь', $this->keyboardService->getMainKeyboard());
+            $this->telegramService->sendMessage($chatId, '⏳ Импорт поставлен в очередь',
+                $this->keyboardService->getMainKeyboard());
         
         } catch (\Exception $e) {
             Log::error('Ошибка: ' . $e->getMessage());

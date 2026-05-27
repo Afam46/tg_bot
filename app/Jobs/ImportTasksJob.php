@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Maatwebsite\Excel\Facades\Excel;
+use App\Services\TelegramService;
 
 class ImportTasksJob implements ShouldQueue
 {
@@ -20,10 +21,8 @@ class ImportTasksJob implements ShouldQueue
         public string $filePath
     ) {}
 
-    public function handle(): void
+    public function handle(TelegramService $telegramService): void
     {
-        $telegram = new Api(env('TELEGRAM_BOT_TOKEN'));
-
         Excel::import(
             new TasksImport($this->userId),
             $this->filePath
@@ -33,9 +32,6 @@ class ImportTasksJob implements ShouldQueue
             unlink($this->filePath);
         }
 
-        $telegram->sendMessage([
-            'chat_id' => $this->chatId,
-            'text' => '✅ Задачи успешно импортированы!'
-        ]);
+        $telegramService->sendMessage($this->chatId, '✅ Задачи успешно импортированы!');
     }
 }
