@@ -35,6 +35,10 @@ class AiService
             ]
         );
 
+        if ($response->failed()) {
+            throw new \Exception('AI API unavailable');
+        }
+
         $data = $response->json();
 
         return $data['choices'][0]['message']['content']

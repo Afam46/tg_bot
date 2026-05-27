@@ -6,6 +6,7 @@ use App\Services\AiService;
 use App\Services\TelegramService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 
 class ProcessAiMessageJob implements ShouldQueue
 {
@@ -30,6 +31,7 @@ class ProcessAiMessageJob implements ShouldQueue
             );
 
         } catch (\Exception $e) {
+            Log::error('AI ERROR: ' . $e->getMessage());
 
             $telegramService->sendMessage(
                 $this->chatId,
