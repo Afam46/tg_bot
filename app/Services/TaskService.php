@@ -60,4 +60,16 @@ class TaskService
             return UserTask::where('telegram_user_id',$userId)->where('status',false)->get();
         });
     }
+
+    public function getActiveTasksPaginated(int $userId, int $page = 1)
+    {
+        $perPage = 5;
+
+        $query = UserTask::where('telegram_user_id', $userId)->where('status', false);
+
+        return [
+            'items' => $query->offset(($page - 1) * $perPage)->limit($perPage)->get(),
+            'total' => $query->count()
+        ];
+    }
 }

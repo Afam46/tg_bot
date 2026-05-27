@@ -168,24 +168,40 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleMyTasks(int $chatId, object $user): JsonResponse
-    {
-        $tasks = $this->taskService->getActiveTasks($user->id);
-        
-        $count = $tasks->count();
+   private function handleMyTasks(int $chatId, object $user, int $page = 1): JsonResponse
+   {
+        $tasks = $this->taskService->getActiveTasksPaginated($user->id, $page);
+
+        $count = $tasks['total'];
 
         if ($count == 0) {
-            $this->telegramService->sendMessage($chatId, "🎉 У тебя нет активных задач! 🎉");
+            $this->telegramService->sendMessage(
+                $chatId,
+                "🎉 У тебя нет активных задач! 🎉"
+            );
+
             return $this->ok();
         }
-        
-        $response = "📋 *Твои задачи ({$count}):*\n";
-        foreach ($tasks as $index => $task) {
-            $response .= ($index + 1) . ". {$task->task_text}\n";
+
+        $response = "📋 Твои задачи ({$count}):\n\n";
+
+        foreach ($tasks['items'] as $index => $task) {
+
+            $number = (($page - 1) * 5) + $index + 1;
+
+            $response .= "{$number}. {$task->task_text}\n";
         }
+
         $response .= "\n✅ Нажми на задачу, чтобы выполнить";
-        
-        $this->telegramService->sendMessage($chatId, $response, $this->keyboardService->getTasksKeyboard($user->id));
+
+        $this->telegramService->sendMessage(
+            $chatId,
+            $response,
+            $this->keyboardService->getTasksKeyboard(
+                $user->id,
+                $page
+            )
+        );
 
         return $this->ok();
     }
@@ -245,26 +261,58 @@ class TelegramBotController extends Controller
     private function handleCallback(object $callbackQuery): JsonResponse
     {
         $chatId = $callbackQuery->getMessage()->getChat()->getId();
+
+        $messageId = $callbackQuery->getMessage()->getMessageId();
+
         $data = $callbackQuery->getData();
 
+        $user = $this->userService->findUser($chatId);
+
         $this->telegramService->answerCallbackQuery($callbackQuery);
-        
+
         if (str_starts_with($data, 'done_')) {
+
             $taskId = (int) str_replace('done_', '', $data);
+
             $task = $this->taskService->findTask($taskId);
-            
+
             if ($task && $task->status == false) {
 
                 $this->taskService->completeTask($task);
-                $this->refreshTasksMessage($chatId, $callbackQuery->getMessage()->getMessageId());
+
+                $this->refreshTasksMessage($chatId, $messageId);
+
                 $this->telegramService->sendMessage($chatId, "✅ Задача «{$task->task_text}» выполнена! ✅");
 
             } else {
-                $this->telegramService->answerCallbackQuery($callbackQuery,
-                "❌ Задача уже была выполнена", false);
+                $this->telegramService->answerCallbackQuery($callbackQuery, "❌ Задача уже была выполнена",
+                    false);
             }
         }
-        
+
+        if (str_starts_with($data, 'tasks_page_')) {
+
+            $page = (int) str_replace('tasks_page_', '',$data);
+
+            $tasks = $this->taskService->getActiveTasksPaginated($user->id, $page);
+
+            $count = $tasks['total'];
+
+            $response = "📋 Твои задачи ({$count}):\n\n";
+
+            foreach ($tasks['items'] as $index => $task) {
+
+                $number = (($page - 1) * 5) + $index + 1;
+
+                $response .= "{$number}. {$task->task_text}\n";
+            }
+
+            $response .= "\n✅ Нажми на задачу, чтобы выполнить";
+
+            $this->telegramService->editMessageText($chatId, $messageId, $response, null,
+                $this->keyboardService->getTasksKeyboard($user->id, $page));
+        }
+
         return $this->ok();
     }
 
