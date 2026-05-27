@@ -8,9 +8,9 @@ class TelegramService
 {
     protected Api $telegram;
 
-    public function __construct()
+    public function __construct(?Api $telegram = null)
     {
-        $this->telegram = new Api(
+        $this->telegram = $telegram ?? new Api(
             env('TELEGRAM_BOT_TOKEN')
         );
     }
@@ -19,7 +19,7 @@ class TelegramService
         return $this->telegram;
     }
 
-    public function sendMessage(int $chatId,string $text,$keyboard = null): void
+    public function sendMessage(int $chatId,string $text,$keyboard = null)
     {
         $params = [
             'chat_id' => $chatId,
@@ -33,7 +33,7 @@ class TelegramService
         $this->telegram->sendMessage($params);
     }
 
-    public function answerCallbackQuery($callbackQuery, $text = null, $showAlert = null){
+    public function answerCallbackQuery(object $callbackQuery, $text = null, $showAlert = null){
         $params = [
             'callback_query_id' => $callbackQuery->getId(),
         ];
@@ -49,7 +49,7 @@ class TelegramService
         $this->telegram->answerCallbackQuery($params);
     }
 
-    public function editMessageText($chatId, $messageId, $text, $parseMode = null, $replyMarkup = null)
+    public function editMessageText(int $chatId, int $messageId, string $text, $parseMode = null, $replyMarkup = null)
     {
         $params = [
             'chat_id' => $chatId,
@@ -68,7 +68,7 @@ class TelegramService
         $this->telegram->editMessageText($params);
     }
 
-    public function sendChatAction($chatId)
+    public function sendChatAction(int $chatId)
     {
         $params = [
             'chat_id' => $chatId,
@@ -78,7 +78,7 @@ class TelegramService
         $this->telegram->sendChatAction($params);
     }
 
-    public function sendDocument($chatId, $filePath, $text, $keyboard)
+    public function sendDocument(int $chatId, string $filePath, string $text, string $keyboard)
     {
         $params = [
             'chat_id' => $chatId,

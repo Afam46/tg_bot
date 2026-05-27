@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
@@ -10,7 +11,6 @@ use App\Services\WeatherService;
 use App\Services\AiService;
 use App\Services\TaskService;
 use App\Services\TelegramService;
-use App\Services\UserStateService;
 use App\Services\ImportService;
 use App\Services\UserService;
 use App\Services\KeyboardService;
@@ -21,31 +21,34 @@ class TelegramBotController extends Controller
     protected AiService $aiService;
     protected TaskService $taskService;
     protected TelegramService $telegramService;
-    protected UserStateService $userStateService;
     protected ImportService $importService;
     protected UserService $userService;
     protected KeyboardService $keyboardService;
 
-    public function __construct(WeatherService $weatherService, AiService $aiService,
-    TaskService $taskService, TelegramService $telegramService, UserStateService $userStateService,
-    ImportService $importService, UserService $userService, KeyboardService $keyboardService)
-    {
+    public function __construct(
+        WeatherService $weatherService,
+        AiService $aiService,
+        TaskService $taskService,
+        TelegramService $telegramService,
+        ImportService $importService,
+        UserService $userService,
+        KeyboardService $keyboardService
+    ) {
         $this->weatherService = $weatherService;
         $this->aiService = $aiService;
         $this->taskService = $taskService;
         $this->telegramService = $telegramService;
-        $this->userStateService = $userStateService;
         $this->importService = $importService;
         $this->userService = $userService;
         $this->keyboardService = $keyboardService;
     }
 
-    private function ok()
+    private function ok(): JsonResponse
     {
         return response()->json(['status' => 'ok']);
     }
 
-    public function webhook(Request $request)
+    public function webhook(Request $request): JsonResponse
     {
         $telegram = $this->telegramService->getTelegram();
         $update = $telegram->getWebhookUpdate();
@@ -111,7 +114,7 @@ class TelegramBotController extends Controller
         return $this->handleUnknown($chatId);
     }
 
-    private function handleStart($message, $chatId)
+    private function handleStart(object $message, int $chatId): JsonResponse
     {
         $text = $this->userService->updateOrCreateUser($message, $chatId);
 
@@ -120,7 +123,7 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleUnregistered($chatId)
+    private function handleUnregistered(int $chatId): JsonResponse
     {
         $this->telegramService->sendMessage($chatId, 'Привет! Напиши /start, чтобы авторизоваться',
             $this->keyboardService->getStartKeyboard());
@@ -128,10 +131,10 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleWaitingTask($chatId, $user, $text)
+    private function handleWaitingTask(int $chatId, object $user, string $text): JsonResponse
     {
         $this->taskService->createTask($user->id, $text);
-        $this->userStateService->setState($user, null);
+        $this->userService->setState($user, null);
 
         $this->telegramService->sendMessage($chatId, "✅ Задача добавлена!\n📋 Текст: {$text}",
             $this->keyboardService->getMainKeyboard());
@@ -139,7 +142,7 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleProfile($chatId, $user)
+    private function handleProfile(int $chatId, object $user): JsonResponse
     {   
         $stats = $this->taskService->getStats($user);
       
@@ -152,16 +155,16 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleCreateTask($chatId, $user)
+    private function handleCreateTask(int $chatId, object $user): JsonResponse
     {
-        $this->userStateService->setState($user, 'waiting_task');
+        $this->userService->setState($user, 'waiting_task');
 
         $this->telegramService->sendMessage($chatId, '✏️ Опиши задачу:', json_encode(['remove_keyboard' => true]));
 
         return $this->ok();
     }
 
-    private function handleMyTasks($chatId, $user)
+    private function handleMyTasks(int $chatId, object $user): JsonResponse
     {
         $tasks = $this->taskService->getActiveTasks($user->id);
         
@@ -183,7 +186,7 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleDone($chatId, $user, $taskNumber)
+    private function handleDone(int $chatId, object $user, int $taskNumber): JsonResponse
     {
         $tasks = $this->taskService->getActiveTasks($user->id);
 
@@ -202,9 +205,9 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleWeather($chatId, $user)
+    private function handleWeather(int $chatId, object $user): JsonResponse
     {
-        $this->userStateService->setState($user, 'waiting_city');
+        $this->userService->setState($user, 'waiting_city');
         
         $this->telegramService->sendMessage($chatId, '🔍 Введите название города 🔍',
         json_encode(['remove_keyboard' => true]));
@@ -212,7 +215,7 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleGetWeather($chatId, $user, $city)
+    private function handleGetWeather(int $chatId, object $user, string $city): JsonResponse
     {
         try {
 
@@ -230,12 +233,12 @@ class TelegramBotController extends Controller
             $this->telegramService->sendMessage($chatId, '❌ ' . $e->getMessage());
         }
 
-        $this->userStateService->setState($user, null);
+        $this->userService->setState($user, null);
 
         return $this->ok();
     }
 
-    private function handleCallback($callbackQuery)
+    private function handleCallback(object $callbackQuery): JsonResponse
     {
         $chatId = $callbackQuery->getMessage()->getChat()->getId();
         $data = $callbackQuery->getData();
@@ -243,7 +246,7 @@ class TelegramBotController extends Controller
         $this->telegramService->answerCallbackQuery($callbackQuery);
         
         if (str_starts_with($data, 'done_')) {
-            $taskId = str_replace('done_', '', $data);
+            $taskId = (int) str_replace('done_', '', $data);
             $task = $this->taskService->findTask($taskId);
             
             if ($task && $task->status == false) {
@@ -261,7 +264,7 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function refreshTasksMessage($chatId, $messageId)
+    private function refreshTasksMessage(int $chatId, int $messageId): void
     {
         $user = $this->userService->findUser($chatId);
 
@@ -287,9 +290,9 @@ class TelegramBotController extends Controller
         $this->telegramService->editMessageText($chatId, $messageId, $response, 'Markdown', $keyboard);
     }
 
-    private function handleAiMode($chatId, $user)
+    private function handleAiMode(int $chatId, object $user): JsonResponse
     {
-        $this->userStateService->setState($user, 'waiting_ai');
+        $this->userService->setState($user, 'waiting_ai');
 
         $text = "🤖 ИИ-режим активирован!\n\nЗадайте любой вопрос, и я постараюсь ответить.".
         "\n\nЧтобы выключить режим, отправьте команду /exit";
@@ -299,10 +302,10 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleAiQuery($chatId, $user, $query)
+    private function handleAiQuery(int $chatId, object $user, string $query): JsonResponse
     {
         if ($query === '/exit') {
-            $this->userStateService->setState($user, null);
+            $this->userService->setState($user, null);
 
             $this->telegramService->sendMessage($chatId, '🤖 ИИ-режим выключен!', $this->keyboardService->getMainKeyboard());
 
@@ -326,7 +329,7 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleExportTasks($chatId, $user)
+    private function handleExportTasks(int $chatId, object $user): JsonResponse
     {
         $this->telegramService->sendMessage($chatId, '⏳ Подготавливаю Excel файл...');
 
@@ -346,9 +349,9 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleImport($chatId, $user)
+    private function handleImport(int $chatId, object $user): JsonResponse
     {
-        $this->userStateService->setState($user, 'waiting_import');
+        $this->userService->setState($user, 'waiting_import');
 
         $this->telegramService->sendMessage($chatId, '📤 Отправьте Excel файл (.xlsx) с задачами',
         json_encode(['remove_keyboard' => true]));
@@ -356,12 +359,12 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleImportTasks($chatId, $user, $message)
+    private function handleImportTasks(int $chatId, object $user, object $message): JsonResponse
     {
         try {
 
             $this->importService->importFile($this->telegramService->getTelegram(), $message, $user, $chatId);
-            $this->userStateService->setState($user, null);
+            $this->userService->setState($user, null);
             $this->telegramService->sendMessage($chatId, '⏳ Импорт поставлен в очередь', $this->keyboardService->getMainKeyboard());
         
         } catch (\Exception $e) {
@@ -372,7 +375,7 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleUnknown($chatId)
+    private function handleUnknown(int $chatId): JsonResponse
     {
         $this->telegramService->sendMessage($chatId, '❌ Используйте кнопки', $this->keyboardService->getMainKeyboard());
         return $this->ok();

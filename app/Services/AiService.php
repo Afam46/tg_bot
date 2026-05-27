@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Http;
 
 class AiService
 {
-    public function ask(string $query): string
+    public function ask(string $query)
     {
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . env('AI_API_KEY'),

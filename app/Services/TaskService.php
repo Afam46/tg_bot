@@ -6,7 +6,7 @@ use App\Models\UserTask;
 
 class TaskService
 {
-    public function createTask(int $userId, string $text): UserTask
+    public function createTask(int $userId, string $text)
     {
         return UserTask::create([
             'telegram_user_id' => $userId,
@@ -15,13 +15,13 @@ class TaskService
         ]);
     }
 
-    public function completeTask($task)
+    public function completeTask(object $task)
     {
         $task->status = true;
         $task->save();
     }
 
-    public function getStats($user)
+    public function getStats(object $user)
     {
         $allTasksCount = $user->tasks()->count();
         $completedTasksCount = $user->tasks()->where('status', true)->count();
@@ -35,8 +35,8 @@ class TaskService
 
         return $stats;
     }
-
-    public function findTask($taskId)
+    
+    public function findTask(int $taskId)
     {
         return UserTask::find($taskId);
     }

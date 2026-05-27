@@ -5,12 +5,12 @@ use App\Models\TelegramUser;
 
 class UserService
 {
-    public function findUser($chatId)
+    public function findUser(int $chatId)
     {
-        return TelegramUser::where('chat_id', $chatId)->first();;
+        return TelegramUser::where('chat_id', $chatId)->first();
     }
 
-    public function updateOrCreateUser($message, $chatId)
+    public function updateOrCreateUser(object $message, int $chatId)
     {
         $firstName = $message->getChat()->getFirstName() ?? 'User';
         $lastName = $message->getChat()->getLastName() ?? null;
@@ -30,5 +30,13 @@ class UserService
             : "✅ Вы авторизованы";
 
         return $text;
+    }
+
+    public function setState(object $user, $state)
+    {   
+        if(method_exists($user, 'save')){
+            $user->state = $state;
+            $user->save();
+        }
     }
 }

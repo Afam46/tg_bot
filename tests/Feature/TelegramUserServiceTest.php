@@ -8,16 +8,21 @@ use App\Services\UserService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Mockery;
 
-class TelegramUserTest extends TestCase
+class TelegramUserServiceTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_user_can_update_or_create(): void
+    public function test_user_updates_if_exists(): void
     {
+        TelegramUser::create([
+            'chat_id' => 1,
+            'username' => 'old_username',
+        ]);
+
         $chatMock = Mockery::mock();
         $chatMock->shouldReceive('getFirstName')->andReturn('Islam');
         $chatMock->shouldReceive('getLastName')->andReturn('Zainullin');
-        $chatMock->shouldReceive('getUsername')->andReturn('afamka');
+        $chatMock->shouldReceive('getUsername')->andReturn('new_username');
 
         $messageMock = Mockery::mock();
         $messageMock->shouldReceive('getChat')->andReturn($chatMock);
@@ -26,13 +31,14 @@ class TelegramUserTest extends TestCase
 
         $text = $userService->updateOrCreateUser($messageMock, 1);
 
-        $this->assertEquals('✅ Авторизация прошла успешно', $text);
+        $this->assertEquals('✅ Вы авторизованы', $text);
 
         $this->assertDatabaseHas('telegram_users', [
             'chat_id' => 1,
-            'username' => 'afamka',
-            'first_name' => 'Islam',
+            'username' => 'new_username',
         ]);
+
+        $this->assertDatabaseCount('telegram_users', 1);
     }
 
     public function test_telegram_user_find(): void
@@ -48,5 +54,20 @@ class TelegramUserTest extends TestCase
         $user = $userService->findUser(1);
 
         $this->assertEquals('test_user', $user->username);
+    }
+
+    public function test_set_state():void 
+    {
+        $user = TelegramUser::create([
+            'chat_id' => 1,
+            'telegram_id' => 123456,
+            'username' => 'test_user',
+        ]);
+
+        $userService = new UserService;
+
+        $userService->setState($user, 'test');
+
+        $this->assertEquals($user->state, 'test');
     }
 }

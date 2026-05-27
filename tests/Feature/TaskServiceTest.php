@@ -32,7 +32,7 @@ class TaskServiceTest extends TestCase
         ]);
     }
 
-     public function test_user_can_complete_task(): void
+    public function test_user_can_complete_task(): void
     {
         $user = TelegramUser::create([
             'chat_id' => 1,
@@ -54,5 +54,53 @@ class TaskServiceTest extends TestCase
             'task_text' => 'Купить пиво',
             'status' => true,
         ]);
+    }
+
+    public function test_find_task(): void
+    {
+        $user = TelegramUser::create([
+            'chat_id' => 1,
+            'telegram_id' => 123456,
+            'username' => 'test_user',
+        ]);
+
+        $task = UserTask::create([
+            'telegram_user_id' => $user->id,
+            'task_text' => 'Купить пиво',
+            'status' => false,
+        ]);
+
+        $taskService = new TaskService;
+
+        $foundTask = $taskService->findTask($task->id);
+
+        $this->assertEquals('Купить пиво', $foundTask->task_text);
+    }
+
+    public function test_get_active_tasks(): void
+    {
+        $taskService = new TaskService;
+
+        $user = TelegramUser::create([
+            'chat_id' => 1,
+            'telegram_id' => 123456,
+            'username' => 'test_user',
+        ]);
+
+        $task = UserTask::create([
+            'telegram_user_id' => $user->id,
+            'task_text' => 'Купить пиво',
+            'status' => false,
+        ]);
+
+        $task = UserTask::create([
+            'telegram_user_id' => $user->id,
+            'task_text' => 'Купить хлеб',
+            'status' => false,
+        ]);
+
+        $tasks = $taskService->getActiveTasks($user->id);
+
+        $this->assertCount(2, $tasks);
     }
 }

@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Http;
 
 class WeatherService
 {
-    public function getWeather(string $city): array
+    public function getWeather(string $city)
     {
         $apiKey = config('app.weather_api_key');
 

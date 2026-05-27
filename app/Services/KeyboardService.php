@@ -28,7 +28,7 @@ class KeyboardService
         ]);
     }
 
-    public function getTasksKeyboard($userId)
+    public function getTasksKeyboard(int $userId)
     {
         $tasks = UserTask::where('telegram_user_id',$userId)->where('status',false)->get();
         

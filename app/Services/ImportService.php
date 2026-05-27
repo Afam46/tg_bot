@@ -5,7 +5,7 @@ use App\Jobs\ImportTasksJob;
 
 class ImportService
 {
-    public function importFile($telegram, $message, $user, $chatId)
+    public function importFile(object $telegram, object $message, object $user, int $chatId)
     {
         $document = $message->getDocument();
 
@@ -23,11 +23,16 @@ class ImportService
             'app/imports/tasks_' . time() . '.xlsx'
         );
 
+        $this->downloadFile($url, $localPath);
+
+        ImportTasksJob::dispatch($user->id, $chatId, $localPath);
+    }
+
+    protected function downloadFile(string $url, string $localPath)
+    {
         file_put_contents(
             $localPath,
             file_get_contents($url)
         );
-
-        ImportTasksJob::dispatch($user->id, $chatId, $localPath);
     }
 }
