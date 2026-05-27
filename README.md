@@ -108,7 +108,7 @@ php artisan test
        ↓
     Laravel Application
        ↓
-    Services → Queue → Redis
+    Services → Queue → DB
        ↓
     MySQL
     
