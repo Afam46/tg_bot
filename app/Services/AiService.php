@@ -17,10 +17,10 @@ class AiService
         $response = Http::withHeaders([
             'Authorization' => 'Bearer ' . env('AI_API_KEY'),
             'Content-Type' => 'application/json',
-        ])->timeout(60)->post(
+        ])->timeout(20)->retry(3, 2000)->post(
             'https://logfare.ai/v1/chat/completions',
             [
-                'model' => 'deepseek-v4-flash',
+                'model' => 'gemma-4-31b-it',
 
                 'messages' => [
                     [
