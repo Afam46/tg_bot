@@ -30,6 +30,12 @@
 - Интеграция с **OpenWeatherMap API**
 - Текущая температура, ощущения, влажность, ветер
 
+### 🧪 Тестирование
+- Feature-тесты для сервисов и бизнес-логики
+- Mockery для моков Telegram API
+- Http::fake для тестирования внешних API
+- Queue::fake для тестирования очередей
+
 ### ⚙️ Backend архитектура
 - Telegram webhook
 - State machine
