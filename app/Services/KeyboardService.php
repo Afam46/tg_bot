@@ -55,7 +55,7 @@ class KeyboardService
                         mb_substr($task->task_text, 0, 35) .
                         (mb_strlen($task->task_text) > 35 ? '…' : ''),
 
-                    'callback_data' => 'done_' . $task->id
+                    'callback_data' => "done_{$task->id}_{$page}"
                 ]
             ];
         }
