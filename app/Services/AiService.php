@@ -20,7 +20,7 @@ class AiService
         ])->timeout(20)->retry(3, 2000)->post(
             'https://logfare.ai/v1/chat/completions',
             [
-                'model' => 'mimo-v2.5-pro',
+                'model' => 'glm-5.1',
 
                 'messages' => [
                     [

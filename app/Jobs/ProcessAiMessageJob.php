@@ -25,10 +25,7 @@ class ProcessAiMessageJob implements ShouldQueue
 
             $answer = mb_substr($answer, 0, 4000);
 
-            $telegramService->sendMessage(
-                $this->chatId,
-                $answer
-            );
+            $telegramService->sendMessage($this->chatId, $answer);
 
         } catch (\Exception $e) {
             Log::error('AI ERROR: ' . $e->getMessage());
