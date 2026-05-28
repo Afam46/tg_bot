@@ -193,15 +193,11 @@ class TelegramBotController extends Controller
         return $this->ok();
     }
 
-    private function handleDone(int $chatId, object $user, int $taskId,
-    int $messageId, int $page): JsonResponse
+    private function handleDone(int $chatId, object $user, int $taskId, int $messageId, int $page): JsonResponse
     {
         $task = $this->taskService->findTask($taskId);
 
         if (!$task || $task->status) {
-            
-            $this->telegramService->sendMessage($chatId, "❌ Задача уже выполнена");
-
             return $this->ok();
         }
 
@@ -209,20 +205,20 @@ class TelegramBotController extends Controller
 
         $tasks = $this->taskService->getActiveTasksPaginated($user->id, $page);
 
-        $count = $tasks['total'];
-
-        if ($count === 0) {
-            $this->telegramService->editMessageText($chatId, $messageId,
-                "🎉 У тебя больше нет активных задач!");
-
-            return $this->ok();
-        }
-
         if ($page > 1 && count($tasks['items']) === 0) {
 
             $page--;
 
             $tasks = $this->taskService->getActiveTasksPaginated($user->id, $page);
+        }
+
+        $count = $tasks['total'];
+
+        if ($count === 0){
+
+            $this->telegramService->editMessageText($chatId, $messageId, "🎉 У тебя больше нет активных задач!");
+
+            return $this->ok();
         }
 
         $response = "📋 Твои задачи ({$count}):\n\n";
