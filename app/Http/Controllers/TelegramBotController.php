@@ -263,7 +263,8 @@ class TelegramBotController extends Controller
         } catch (\Exception $e) {
             Log::error('Ошибка: ' . $e->getMessage());
             
-            $this->telegramService->sendMessage($chatId, '❌ ' . $e->getMessage());
+            $this->telegramService->sendMessage($chatId, '❌ ' . $e->getMessage(),
+                $this->keyboardService->getMainKeyboard());
         }
 
         $this->userService->setState($user, null);
