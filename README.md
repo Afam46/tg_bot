@@ -28,7 +28,7 @@
 
 ## 🤖 AI-ассистент
 
-- Интеграция с DeepSeek API
+- Интеграция с AI API
 - Генерация ответов в режиме диалога
 - Имитация печати (`typing` action)
 - Отдельный AI-режим внутри Telegram-бота
@@ -64,7 +64,7 @@
 
 ---
 
-# 🧪 Тестирование
+## 🧪 Тестирование
 
 Проект покрыт feature-тестами.
 
@@ -89,6 +89,16 @@
 ```bash
 php artisan test
 ```
+## 🐳 Docker
+
+Проект контейнеризирован через Docker и Docker Compose
+
+Сервисы:
+- app (PHP-FPM)
+- nginx
+- mysql
+- redis
+- queue worker
 
 # 🏗️ Backend архитектура
     Telegram Webhook
@@ -99,20 +109,5 @@ php artisan test
     State machine
     REST API integrations
     VPS deployment
+    Docker
     HTTPS + Nginx
-
-# 📂 Архитектура проекта
-    Telegram
-       ↓
-    Webhook
-       ↓
-    Laravel Application
-       ↓
-    Services → Queue → DB
-       ↓
-    MySQL
-    
-    External APIs:
-    - DeepSeek API
-    - OpenWeatherMap API
-    - Telegram Bot API
