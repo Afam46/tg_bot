@@ -15,25 +15,22 @@ class AiService
     public function ask(string $query): string
     {
         $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . env('AI_API_KEY'),
-            'Content-Type' => 'application/json',
-        ])->timeout(20)->retry(3, 2000)->post(
-            'https://logfare.ai/v1/chat/completions',
-            [
-                'model' => 'glm-5.1',
+            'Authorization' => 'Bearer ' . env('DEEPSEEK_API_KEY'),
+        ])->post('https://api.deepseek.com/chat/completions', [
 
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'Ты полезный Telegram ассистент.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => $query
-                    ]
+            'model' => 'deepseek-chat',
+
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => 'Ты полезный Telegram ассистент.'
                 ],
+                [
+                    'role' => 'user',
+                    'content' => "$query"
+                ]
             ]
-        );
+        ]);
 
         if ($response->failed()) {
             throw new \Exception('AI API unavailable');
