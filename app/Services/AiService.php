@@ -36,8 +36,9 @@ class AiService
             throw new \Exception('AI API unavailable');
         }
 
-        return response()->json([
-            'message' => $response['choices'][0]['message']['content']
-        ]);
+        $data = $response->json();
+
+        return $data['choices'][0]['message']['content']
+            ?? 'Ошибка AI';
     }
 }
