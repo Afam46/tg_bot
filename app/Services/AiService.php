@@ -15,7 +15,7 @@ class AiService
     public function ask(string $query): string
     {
         $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . env('DEEPSEEK_API_KEY'),
+            'Authorization' => 'Bearer ' . env('AI_API_KEY'),
         ])->post('https://api.deepseek.com/chat/completions', [
 
             'model' => 'deepseek-chat',
