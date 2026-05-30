@@ -5,8 +5,6 @@ namespace App\Http\Controllers;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Maatwebsite\Excel\Facades\Excel;
-use App\Exports\TasksExport;
 use App\Services\WeatherService;
 use App\Services\AiService;
 use App\Services\TaskService;

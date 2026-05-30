@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Jobs\ProcessAiMessageJob;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class AiService
 {
@@ -14,42 +15,38 @@ class AiService
 
     public function ask(string $query): string
     {
-        $maxAttempts = 3;
-        $attempt = 0;
+        try {
+            $response = Http::timeout(30)->withHeaders([
+                'Authorization' => 'Bearer ' . env('AI_API_KEY'),
+            ])->post('https://api.deepseek.com/chat/completions', [
+                'model' => 'deepseek-chat',
+                'messages' => [
+                    ['role' => 'system', 'content' => 'Ты полезный Telegram ассистент. Отвечай кратко.'],
+                    ['role' => 'user', 'content' => $query]
+                ]
+            ]);
 
-        while ($attempt < $maxAttempts) {
-            try {
-                $response = Http::timeout(30)->withHeaders([
-                    'Authorization' => 'Bearer ' . env('AI_API_KEY'),
-                ])->post('https://api.deepseek.com/chat/completions', [
-                    'model' => 'deepseek-chat',
-                    'messages' => [
-                        ['role' => 'system', 'content' => 'Ты полезный Telegram ассистент.'],
-                        ['role' => 'user', 'content' => $query]
-                    ]
-                ]);
-
-                if ($response->successful()) {
-                    return $response->json()['choices'][0]['message']['content'] ?? 'Ошибка AI';
-                }
-
-                if ($response->status() === 503) {
-                    $attempt++;
-                    sleep(2);
-                    continue;
-                }
-
-                throw new \Exception('HTTP ' . $response->status());
-
-            } catch (\Exception $e) {
-                $attempt++;
-                if ($attempt >= $maxAttempts) {
-                    throw new \Exception('AI API unavailable: ' . $e->getMessage());
-                }
-                sleep(2);
+            if ($response->successful()) {
+                $data = $response->json();
+                return $data['choices'][0]['message']['content'] ?? 'Ошибка AI';
             }
+        } catch (\Exception $e) {
+            Log::warning('DeepSeek failed: ' . $e->getMessage());
         }
 
-        throw new \Exception('AI API unavailable after retries');
+        try {
+            $response = Http::timeout(30)->get('https://api.popcat.xyz/chat', [
+                'msg' => $query
+            ]);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                return $data['response'] ?? 'Не удалось получить ответ';
+            }
+        } catch (\Exception $e) {
+            Log::warning('Popcat failed: ' . $e->getMessage());
+        }
+
+        return "🤖 Извини, AI-сервис временно недоступен. Попробуй позже или задай вопрос иначе.";
     }
 }
