@@ -14,31 +14,42 @@ class AiService
 
     public function ask(string $query): string
     {
-        $response = Http::withHeaders([
-            'Authorization' => 'Bearer ' . env('AI_API_KEY'),
-        ])->post('https://api.deepseek.com/chat/completions', [
+        $maxAttempts = 3;
+        $attempt = 0;
 
-            'model' => 'deepseek-chat',
+        while ($attempt < $maxAttempts) {
+            try {
+                $response = Http::timeout(30)->withHeaders([
+                    'Authorization' => 'Bearer ' . env('AI_API_KEY'),
+                ])->post('https://api.deepseek.com/chat/completions', [
+                    'model' => 'deepseek-chat',
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'Ты полезный Telegram ассистент.'],
+                        ['role' => 'user', 'content' => $query]
+                    ]
+                ]);
 
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => 'Ты полезный Telegram ассистент.'
-                ],
-                [
-                    'role' => 'user',
-                    'content' => "$query"
-                ]
-            ]
-        ]);
+                if ($response->successful()) {
+                    return $response->json()['choices'][0]['message']['content'] ?? 'Ошибка AI';
+                }
 
-        if ($response->failed()) {
-            throw new \Exception('AI API unavailable');
+                if ($response->status() === 503) {
+                    $attempt++;
+                    sleep(2);
+                    continue;
+                }
+
+                throw new \Exception('HTTP ' . $response->status());
+
+            } catch (\Exception $e) {
+                $attempt++;
+                if ($attempt >= $maxAttempts) {
+                    throw new \Exception('AI API unavailable: ' . $e->getMessage());
+                }
+                sleep(2);
+            }
         }
 
-        $data = $response->json();
-
-        return $data['choices'][0]['message']['content']
-            ?? 'Ошибка AI';
+        throw new \Exception('AI API unavailable after retries');
     }
 }
